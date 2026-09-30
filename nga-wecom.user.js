@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.12
+// @version      0.1.13
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.12';
+  var VERSION = '0.1.13';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -101,6 +101,17 @@
     var s = String(name == null ? '' : name);
     for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
     return 'hsl(' + (h % 360) + ',58%,52%)';
+  }
+
+  // 会话列表头像：按名称哈希确定性取 randomuser.me 静态人像
+  // （仅 URL 种子，不携带任何账号信息；加载失败由 onerror 回落首字符）
+  function networkAvatarUrl(seed) {
+    var h = 0;
+    var s = String(seed == null ? '' : seed);
+    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    var gender = h % 2 ? 'women' : 'men';
+    var idx = Math.floor(h / 2) % 100;
+    return 'https://randomuser.me/api/portraits/' + gender + '/' + idx + '.jpg';
   }
 
   function firstChar(name) {
@@ -752,6 +763,9 @@
     '.ngaw-search svg{width:13px;height:13px;flex-shrink:0}',
     '.ngaw-sessions{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:4px 0 12px}',
     '.ngaw-session{display:flex;gap:11px;padding:10px 13px;cursor:pointer;align-items:center;color:inherit;text-decoration:none}',
+    // NGA 全局 a:hover 会给条目加下划线（specificity 更高），显式压制
+    '.ngaw-root .ngaw-session:hover{text-decoration:none!important}',
+    '.ngaw-root .ngaw-session *{text-decoration:none}',
     '.ngaw-session:hover{background:var(--hover)}',
     '.ngaw-session.current{background:var(--active)}',
     '.ngaw-session .mid{flex:1;min-width:0}',
@@ -978,6 +992,21 @@
     return d;
   }
 
+  // 会话列表专用：网络人像头像，失败回落首字符
+  function sessionAvatarEl(name) {
+    var d = h('div', 'ngaw-avatar');
+    var img = document.createElement('img');
+    img.alt = '';
+    img.src = networkAvatarUrl(name);
+    img.onerror = function () {
+      d.innerHTML = '';
+      d.textContent = firstChar(name);
+      d.style.background = hashColor(name);
+    };
+    d.appendChild(img);
+    return d;
+  }
+
   var lastDayKey = '';
 
   function msgEl(post, selfName) {
@@ -1024,20 +1053,19 @@
 
   // 会话条目：用真正的 <a href> 承载导航——默认导航不依赖 JS 事件链，
   // 即使 NGA 全局脚本在捕获阶段拦截事件也能点击（与 onclick 互为双保险）
+  // 列表只展示标题与总回复条数（用户要求），头像用网络人像
   function sessionEl(item, currentTid) {
     var href = item.tid ? '/read.php?tid=' + encodeURIComponent(item.tid)
       : (item.fid ? '/thread.php?fid=' + encodeURIComponent(item.fid) : '');
     var s = document.createElement(href ? 'a' : 'div');
     s.className = 'ngaw-session' + (currentTid && item.tid === currentTid ? ' current' : '');
     if (href) s.setAttribute('href', href);
-    s.appendChild(avatarEl(item.author || item.name || item.title || '版'));
+    s.appendChild(sessionAvatarEl(item.author || item.name || item.title || '版'));
     var mid = h('div', 'mid');
     var row1 = h('div', 'row1');
     row1.appendChild(h('div', 't', escapeHtml(item.title || item.name)));
-    if (item.ts) row1.appendChild(h('div', 'time', escapeHtml(relTime(item.ts))));
     var row2 = h('div', 'row2');
-    var preview = item.replies ? (item.author + '：' + item.replies + ' 条回复') : (item.author || '');
-    row2.appendChild(h('div', 'preview', escapeHtml(truncate(preview, 26))));
+    if (item.replies) row2.appendChild(h('div', 'preview', item.replies + ' 条回复'));
     mid.appendChild(row1);
     mid.appendChild(row2);
     s.appendChild(mid);
@@ -1488,6 +1516,7 @@
     relTime: relTime,
     dayLabel: dayLabel,
     hashColor: hashColor,
+    networkAvatarUrl: networkAvatarUrl,
     firstChar: firstChar,
     escapeHtml: escapeHtml,
     truncate: truncate,
