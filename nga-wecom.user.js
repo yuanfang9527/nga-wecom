@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.15
+// @version      0.1.16
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.15';
+  var VERSION = '0.1.16';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -1020,13 +1020,22 @@
     return d;
   }
 
-  // 会话列表专用：版块用 NGA 真实图标（overrideUrl），帖子用本地 DiceBear identicon；失败均回落首字符
+  // 会话列表专用：版块用 NGA 真实图标（overrideUrl），帖子用本地 DiceBear identicon；
+  // 版块图标 404 时回落 NGA 默认版块头像，仍失败才用首字符
+  var NGA_DEFAULT_BOARD_ICON = 'https://img4.nga.cn/ngabbs/nga_classic/f/00.png';
+
   function sessionAvatarEl(name, overrideUrl) {
     var d = h('div', 'ngaw-avatar');
     var img = document.createElement('img');
     img.alt = '';
     img.src = overrideUrl || diceBearIdenticon(name);
+    var triedDefault = false;
     img.onerror = function () {
+      if (overrideUrl && !triedDefault) {
+        triedDefault = true;
+        img.src = NGA_DEFAULT_BOARD_ICON;
+        return;
+      }
       d.innerHTML = '';
       d.textContent = firstChar(name);
       d.style.background = hashColor(name);
