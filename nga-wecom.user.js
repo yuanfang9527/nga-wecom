@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.2.0
+// @version      0.2.1
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.2.0';
+  var VERSION = '0.2.1';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -435,24 +435,37 @@
         var n = attr.name.toLowerCase();
         if (n.indexOf('on') === 0) el.removeAttribute(attr.name);
         else if (n === 'style' && /expression|javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
-        else if (n === 'class' && attr.value.length > 120) el.removeAttribute('class'); // commonui 内部样式类过长无意义
+        else if (n === 'class') el.removeAttribute('class'); // NGA 类名会命中其全局样式（block_txt/silver 等），气泡内全部剥离；我们自己的 ngaw-* 类在此之后添加
       });
     });
 
-    // 引用块归一：NGA 自渲染的 span.quote 等会被 NGA 全局 .quote 样式波及，
-    // 与 renderBbcode 产物（滚动加载页）样式不一致——统一改写为 div.ngaw-quote，
-    // 脱离 NGA 样式作用域，两个来源走同一条 CSS（外层先改写，内层随后续查询继续处理）
+    // 引用块归一：NGA 自渲染引用的类名未实测确认（可能为 quoteAvl 等变体，v0.1.18 的
+    // 精确 .quote 匹配漏掉了它们，原生样式残留）——放宽为"任何 class 含 quote 的元素"，
+    // 统一改写为 div.ngaw-quote 脱离 NGA 样式作用域，与 renderBbcode 产物走同一条 CSS。
+    // 外层先改写、内层随后续扫描继续处理以保留嵌套；ngaw-quote 自身排除防死循环。
+    function quoteClassCandidates() {
+      var out = [];
+      var bqs = [];
+      try { bqs = Array.prototype.slice.call(frag.querySelectorAll('[class], blockquote')); } catch (e) { bqs = []; }
+      bqs.forEach(function (el) {
+        if (el.tagName === 'BLOCKQUOTE') { out.push(el); return; }
+        var toks = String(el.getAttribute('class') || '').split(/\s+/);
+        for (var i = 0; i < toks.length; i++) {
+          if (toks[i] !== 'ngaw-quote' && /quote/i.test(toks[i])) { out.push(el); return; }
+        }
+      });
+      return out;
+    }
     var guardQ = 0;
-    var quotes;
-    try { quotes = frag.querySelectorAll('.quote, blockquote'); } catch (e) { quotes = []; }
-    while (quotes.length && guardQ++ < 50) {
-      var qn = quotes[0];
-      if (!qn.parentNode) break;
+    var qcs = quoteClassCandidates();
+    while (qcs.length && guardQ++ < 60) {
+      var qn = qcs[0];
+      if (!qn.parentNode) { qcs = quoteClassCandidates(); continue; }
       var qdiv = document.createElement('div');
       qdiv.className = 'ngaw-quote';
       while (qn.firstChild) qdiv.appendChild(qn.firstChild);
       qn.parentNode.replaceChild(qdiv, qn);
-      try { quotes = frag.querySelectorAll('.quote, blockquote'); } catch (e) { quotes = []; }
+      qcs = quoteClassCandidates();
     }
 
     var imgs = frag.querySelectorAll('img');
@@ -1916,6 +1929,21 @@
             out.threadRowHtml = null;
           }
         } catch (e) { out.threadRowHtml = 'ERR'; }
+        // 引用块样本：首个 class 含 quote 的元素真实结构（引用归一化校准用）
+        try {
+          var qEl = document.querySelector('#m_posts [class*="quote"], #m_posts blockquote');
+          if (qEl) {
+            out.quoteHtml = String(qEl.outerHTML).replace(/\s+/g, ' ').slice(0, 2500);
+            var qCls = {};
+            Array.prototype.forEach.call(qEl.querySelectorAll('[class]'), function (e2) {
+              String(e2.getAttribute('class') || '').split(/\s+/).forEach(function (c) { if (c) qCls[c] = 1; });
+            });
+            out.quoteClasses = Object.keys(qCls);
+          } else {
+            out.quoteHtml = null;
+            out.quoteClasses = null;
+          }
+        } catch (e) { out.quoteHtml = 'ERR'; }
         if (window.console) {
           console.log('[nga-wecom] probe：selectors=候选选择器命中数，structure=容器前 8 个子元素签名');
           console.log(JSON.stringify(out, null, 2));
