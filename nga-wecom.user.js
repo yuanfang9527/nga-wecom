@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.2
+// @version      0.1.3
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.2';
+  var VERSION = '0.1.3';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -367,14 +367,42 @@
 
   // ---- 主题列表提取（thread.php / read.php 侧栏）----
 
+  // v0.1.3 实测：#m_threads 存在（无 .c class，直接 > div.w100），tid 链接 228 命中；
+  // a[id^="topic"] 与 .c 变体为死候选已清理
   var THREAD_LINK_CANDIDATES = [
-    '#m_threads a[id^="topic"]',
     '#m_threads a[href*="read.php?tid="]',
-    '#m_threads.c a[href*="read.php?tid="]',
     'a[href*="read.php?tid="]'
   ];
 
-  var BAD_LINK_TEXT = /^(附件|上一页|下一页|首页|末页|尾页|\.\.\.|«|»|next|prev)$/i;
+  // 无效主题链接文本：翻页/附件等，含纯数字页码（实测每主题有标题+页码跳转+最后回复共 ~6 个链接）
+  var BAD_LINK_TEXT = /^(附件|上一页|下一页|首页|末页|尾页|\.\.\.|«|»|next|prev|\d+)$/i;
+
+  function isBadThreadLinkText(text) {
+    var t = String(text == null ? '' : text).trim();
+    return !t || BAD_LINK_TEXT.test(t);
+  }
+
+  // 找到主题链接所属的“主题行”：向上爬，父节点出现其他主题的链接（tid 不同）或
+  // 到达 #m_threads 容器即停。与 postRowOf 同一模式，兼容 div/table 任意行结构。
+  function threadRowOf(linkEl) {
+    var myTid = parseQueryParam(linkEl.getAttribute('href') || '', 'tid');
+    var cur = linkEl;
+    var guard = 0;
+    while (cur && cur.parentElement && guard++ < 12) {
+      var p = cur.parentElement;
+      var pid = p.id || '';
+      if (pid === 'm_threads' || /^m_threads/.test(pid)) break;
+      var links = p.querySelectorAll('a[href*="read.php?tid="]');
+      var others = false;
+      for (var i = 0; i < links.length; i++) {
+        var t = parseQueryParam(links[i].getAttribute('href') || '', 'tid');
+        if (t && t !== myTid) { others = true; break; }
+      }
+      if (others) break;
+      cur = p;
+    }
+    return cur;
+  }
 
   function extractThreadRows(root, baseUrl) {
     var links = qAll(root, THREAD_LINK_CANDIDATES);
@@ -384,13 +412,13 @@
 
     links.forEach(function (a) {
       var title = (a.textContent || '').trim();
-      if (!title || BAD_LINK_TEXT.test(title)) return;
+      if (!title || isBadThreadLinkText(title)) return;
       var href = a.getAttribute('href') || '';
       var tid = parseQueryParam(href, 'tid');
       if (!tid || seen[tid]) return;
       seen[tid] = 1;
 
-      var row = a.closest('tr') || a.closest('table') || a.parentElement;
+      var row = threadRowOf(a) || a.parentElement;
       var rowText = row ? (row.textContent || '') : title;
 
       var authorLink = null;
@@ -1195,6 +1223,7 @@
     buildPageUrl: buildPageUrl,
     clamp: clamp,
     isGuestWallText: isGuestWallText,
+    isBadThreadLinkText: isBadThreadLinkText,
     routeOf: routeOf,
     parseTimeText: parseTimeText,
     cleanPageTitle: cleanPageTitle
@@ -1294,6 +1323,25 @@
           try { el = document.querySelector(sel); } catch (e) { el = null; }
           out.structure[sel] = el ? Array.prototype.slice.call(el.children, 0, 8).map(describeEl) : null;
         });
+        // 祖先链采样：首个主题链接/首个楼层内容从内到外的元素签名，用于精确定位行结构
+        function ancestryOf(el, maxUp) {
+          var chain = [];
+          var cur = el;
+          var guard = 0;
+          while (cur && guard++ < (maxUp || 10)) {
+            chain.push(describeEl(cur));
+            cur = cur.parentElement;
+          }
+          return chain;
+        }
+        var firstThreadLink = null;
+        var firstPost = null;
+        try { firstThreadLink = document.querySelector('#m_threads a[href*="read.php?tid="]'); } catch (e) { firstThreadLink = null; }
+        try { firstPost = document.querySelector('#m_posts [id^="postcontent"]'); } catch (e) { firstPost = null; }
+        out.ancestry = {
+          firstThreadLink: firstThreadLink ? ancestryOf(firstThreadLink, 8) : null,
+          firstPostContent: firstPost ? ancestryOf(firstPost, 8) : null
+        };
         if (window.console) {
           console.log('[nga-wecom] probe：selectors=候选选择器命中数，structure=容器前 8 个子元素签名');
           console.log(JSON.stringify(out, null, 2));
