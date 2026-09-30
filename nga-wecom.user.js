@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.4
+// @version      0.1.5
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.4';
+  var VERSION = '0.1.5';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -167,6 +167,95 @@
     var cs = (mm && mm[1] || '').toLowerCase();
     if (cs === 'utf-8' || cs === 'utf8') return new TextDecoder('utf-8').decode(buf);
     return new TextDecoder('gb18030').decode(buf);
+  }
+
+  // ---------- NGA BBCode 渲染 ----------
+  // fetch 拉取的页面不经 commonui 处理，postcontent 里是原始 BBCode，需自行渲染。
+  // 全程先 escapeHtml 再做标签替换，天然防注入；颜色/字号走白名单。
+
+  function looksLikeBbcode(text) {
+    var t = String(text == null ? '' : text);
+    if (/\[\/?quote\]/i.test(t)) return true;
+    if (/\[(pid|uid|img|url|size|color|code|list|flash|video|align)[^\]]*\]/i.test(t)) return true;
+    if (/\[[bis]\][\s\S]*\[\/[bis]\]/i.test(t)) return true;
+    return false;
+  }
+
+  var BBCODE_SIZE_PX = { 1: 10, 2: 12, 3: 14, 4: 16, 5: 18, 6: 22, 7: 26 };
+
+  function renderBbcode(src) {
+    var s = escapeHtml(String(src == null ? '' : src));
+
+    // code 块先抽出，避免内部被其他规则加工
+    var codeBank = [];
+    s = s.replace(/\[code\]([\s\S]*?)\[\/code\]/gi, function (all, inner) {
+      codeBank.push(inner);
+      return '\u0000CODE' + (codeBank.length - 1) + '\u0000';
+    });
+
+    // 引用块：从最内层开始迭代展开（tempered 贪婪，不跨内层 [quote]）
+    var reQuote = /\[quote\]((?:(?!\[quote\])[\s\S])*?)\[\/quote\]/i;
+    var guard = 0;
+    while (reQuote.test(s) && guard++ < 24) {
+      s = s.replace(reQuote, '<div class="quote">$1</div>');
+    }
+
+    // 引用头元数据：[pid=...]Reply[/pid]、[uid=...]name[/uid]
+    s = s.replace(/\[pid=(\d+)(?:,[^\]]*)?\]([^\[]*)\[\/pid\]/gi,
+      '<a href="/read.php?pid=$1">$2</a>');
+    s = s.replace(/\[uid=(\d+)\]([^\[]*)\[\/uid\]/gi,
+      '<a href="/nuke.php?func=ucp&amp;uid=$1">$2</a>');
+
+    // 基本样式
+    s = s.replace(/\[b\]([\s\S]*?)\[\/b\]/gi, '<strong>$1</strong>');
+    s = s.replace(/\[i\]([\s\S]*?)\[\/i\]/gi, '<em>$1</em>');
+    s = s.replace(/\[u\]([\s\S]*?)\[\/u\]/gi, '<u>$1</u>');
+    s = s.replace(/\[s\]([\s\S]*?)\[\/s\]/gi, '<s>$1</s>');
+
+    // 图片（NGA 附件相对路径 ./mon_xxx 交给 sanitizeContent 绝对化）
+    s = s.replace(/\[img\]([^\[\s]+)\[\/img\]/gi, '<img src="$1" class="ngaw-img" alt="">');
+    s = s.replace(/\[img=([^\[\]\s]+)[^\]]*\]/gi, '<img src="$1" class="ngaw-img" alt="">');
+
+    // 链接
+    s = s.replace(/\[url=([^\]\s]+)\]([\s\S]*?)\[\/url\]/gi, '<a href="$1">$2</a>');
+    s = s.replace(/\[url\]([^\[\s]+)\[\/url\]/gi, '<a href="$1">$1</a>');
+
+    // 颜色/字号：白名单校验，防止 style 注入
+    s = s.replace(/\[color=([^\]]+)\]([\s\S]*?)\[\/color\]/gi, function (all, val, inner) {
+      var v = String(val).trim();
+      if (!/^(#[0-9a-f]{3,8}|red|green|blue|gray|grey|orange|purple|pink|brown|black|white|yellow|cyan|lime|silver|gold)$/i.test(v)) return inner;
+      return '<span style="color:' + v + '">' + inner + '</span>';
+    });
+    s = s.replace(/\[size=(\d+)\]([\s\S]*?)\[\/size\]/gi, function (all, val, inner) {
+      var px = BBCODE_SIZE_PX[clamp(parseInt(val, 10) || 3, 1, 7)];
+      return '<span style="font-size:' + px + 'px">' + inner + '</span>';
+    });
+
+    // 对齐
+    s = s.replace(/\[align=([a-z]+)\]([\s\S]*?)\[\/align\]/gi, function (all, val, inner) {
+      if (val === 'center') return '<div style="text-align:center">' + inner + '</div>';
+      if (val === 'right') return '<div style="text-align:right">' + inner + '</div>';
+      return inner;
+    });
+
+    // 列表（li 不闭合，浏览器容错）
+    s = s.replace(/\[list\]([\s\S]*?)\[\/list\]/gi, '<ul>$1</ul>');
+    s = s.replace(/\[\*\]/gi, '<li>');
+
+    // NGA 表情：无法可靠映射官方 CDN 图片，渲染为占位符（title 保留语义）
+    s = s.replace(/\[s:[^\]]*\]/gi, '<span class="ngaw-emo" title="NGA 表情">🙂</span>');
+
+    // flash/video → 链接
+    s = s.replace(/\[(?:flash|video)[^\]]*\]([^\[\s]+)\[\/(?:flash|video)\]/gi, '<a href="$1">[视频] $1</a>');
+
+    // 还原 code 块
+    s = s.replace(/\u0000CODE(\d+)\u0000/g, function (all, idx) {
+      return '<pre class="ngaw-code">' + codeBank[+idx] + '</pre>';
+    });
+
+    // 换行
+    s = s.replace(/\r?\n/g, '<br>');
+    return s;
   }
 
   // 登录墙识别：只认精确标志（NGA 拦截页的标题与正文固定文案），
@@ -369,7 +458,8 @@
         floor: floor,
         ts: parseTimeText(rowText),
         subject: subject,
-        html: contentEl.innerHTML
+        // fetch 页面未经 commonui 渲染时 postcontent 是原始 BBCode，自行渲染
+        html: looksLikeBbcode(contentEl.textContent || '') ? renderBbcode(contentEl.textContent) : contentEl.innerHTML
       });
     });
 
@@ -585,6 +675,9 @@
     '.ngaw-bubble a:hover{text-decoration:underline}',
     '.ngaw-bubble .quote,.ngaw-bubble blockquote{border-left:3px solid #cfcfcf;background:var(--quote-bg);color:var(--quote-fg);padding:6px 10px;margin:6px 0;border-radius:4px;font-size:13px}',
     '.ngaw-bubble .quote .quote,.ngaw-bubble blockquote blockquote{margin:4px 0}',
+    '.ngaw-bubble .ngaw-code{background:var(--quote-bg);border-radius:6px;padding:8px 10px;font-family:Consolas,Menlo,monospace;font-size:12px;white-space:pre-wrap;margin:6px 0;overflow-x:auto}',
+    '.ngaw-bubble .ngaw-emo{display:inline-block;padding:0 2px;font-size:15px;opacity:.85;cursor:default}',
+    '.ngaw-bubble li{margin-left:18px}',
     '.ngaw-bubble table{border-collapse:collapse;max-width:100%}',
     '.ngaw-bubble td,.ngaw-bubble th{border:1px solid var(--border);padding:3px 8px;font-size:13px}',
     '.ngaw-loadtip{display:flex;justify-content:center;padding:10px 0;font-size:12px;color:var(--sub)}',
@@ -1250,6 +1343,8 @@
     isGuestWallText: isGuestWallText,
     isBadThreadLinkText: isBadThreadLinkText,
     decodeHtmlBuffer: decodeHtmlBuffer,
+    looksLikeBbcode: looksLikeBbcode,
+    renderBbcode: renderBbcode,
     routeOf: routeOf,
     parseTimeText: parseTimeText,
     cleanPageTitle: cleanPageTitle

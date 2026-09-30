@@ -174,6 +174,51 @@ test('decodeHtmlBuffer: meta 声明 utf-8 时按 utf-8 解码', () => {
   assert.strictEqual(m.decodeHtmlBuffer(utf8), '<meta charset="utf-8">你');
 });
 
+// ---------- looksLikeBbcode / renderBbcode ----------
+
+test('looksLikeBbcode: 识别原始 BBCode', () => {
+  assert.strictEqual(m.looksLikeBbcode('[quote][pid=1,2,3]Reply[/pid][/quote]'), true);
+  assert.strictEqual(m.looksLikeBbcode('[b]bold[/b]'), true);
+  assert.strictEqual(m.looksLikeBbcode('[img]./mon_x.png[/img]'), true);
+  assert.strictEqual(m.looksLikeBbcode('普通已渲染文本，无标签'), false);
+});
+
+test('renderBbcode: 引用头元数据转为链接（用户实测样例）', () => {
+  const out = m.renderBbcode('[quote][pid=883366224,47641935,2]Reply[/pid] [b]Post by [uid=346237]rinoa360[/uid] (2026-09-30 15:56):[/b]\n黄果居然有iPhone的版本[/quote]');
+  assert.ok(out.includes('class="quote"'), '应有引用块');
+  assert.ok(out.includes('href="/read.php?pid=883366224"'), 'pid 应转原帖链接');
+  assert.ok(out.includes('href="/nuke.php?func=ucp&amp;uid=346237"'), 'uid 应转用户链接');
+  assert.ok(out.includes('<strong>Post by'), '粗体生效');
+  assert.ok(out.includes('rinoa360'), '用户名保留');
+  assert.ok(out.includes('黄果居然有iPhone的版本'), '内容保留');
+});
+
+test('renderBbcode: 嵌套 quote 逐层展开', () => {
+  const out = m.renderBbcode('[quote]外层[quote]内层[/quote]继续[/quote]');
+  assert.strictEqual(out.split('class="quote"').length - 1, 2);
+});
+
+test('renderBbcode: 图片/链接/表情/代码块', () => {
+  const out = m.renderBbcode('[img]./mon_202407/abc.png[/img][url=https://a.com]文字[/url][s:ac:哭]哈哈[code]int x = 1;[/code]');
+  assert.ok(out.includes('<img src="./mon_202407/abc.png"'));
+  assert.ok(out.includes('href="https://a.com"'));
+  assert.ok(out.includes('ngaw-emo'));
+  assert.ok(out.includes('ngaw-code'));
+  assert.ok(out.includes('int x = 1;'));
+});
+
+test('renderBbcode: HTML 注入被转义', () => {
+  const out = m.renderBbcode('[quote]<script>alert(1)<\/script>[/quote]');
+  assert.ok(!out.includes('<script>'));
+  assert.ok(out.includes('&lt;script&gt;'));
+});
+
+test('renderBbcode: color 走白名单，非法值丢弃样式', () => {
+  assert.ok(m.renderBbcode('[color=red]红[/color]').includes('color:red'));
+  assert.ok(!m.renderBbcode('[color=expression(alert(1))]x[/color]').includes('expression'));
+  assert.ok(m.renderBbcode('[size=5]大[/size]').includes('font-size:18px'));
+});
+
 // ---------- isGuestWallText ----------
 
 test('isGuestWallText: 只认精确登录墙标志', () => {
