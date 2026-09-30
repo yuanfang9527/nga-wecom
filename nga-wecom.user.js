@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.16
+// @version      0.1.17
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.16';
+  var VERSION = '0.1.17';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -1579,6 +1579,20 @@
 
   if (typeof module !== 'undefined' && module.exports) module.exports = EXPORTS;
 
+  // 早期伪装（document-start 即执行）：注入 CSS 并给 <html> 加隐藏类，
+  // 让 display:none 先于原生内容解析生效——否则点击跳转后新页面首帧
+  // 会闪现 NGA 原生样式（DOMContentLoaded 才 boot 太晚）。
+  // 登录墙/关闭态在 boot 时调用 applyDisguise(false) 还原。
+  function earlyDisguise() {
+    try {
+      SETTINGS = loadSettings();
+      if (!SETTINGS.enabled) return;
+      if (ORIG_TITLE === null && document.title) ORIG_TITLE = document.title;
+      injectCss();
+      document.documentElement.classList.add('ngaw-on');
+    } catch (e) { /* 早期环境异常则交由 DOMContentLoaded 的 boot 兜底 */ }
+  }
+
   function boot() {
     DEBUG_STATS.phase = 'boot';
     SETTINGS = loadSettings();
@@ -1592,10 +1606,11 @@
     SELF_NAME = (SETTINGS.selfName || '').trim();
     if (!SELF_NAME) SELF_NAME = detectSelfName(document);
 
-    // 登录墙/错误页：不激活伪装，让用户看到原生提示去登录
+    // 登录墙/错误页：还原早期隐藏的原生页，让用户看到原生提示去登录
     var bodyHead = document.body ? (document.body.textContent || '').slice(0, 500) : '';
     if (isGuestWallText(document.title, bodyHead)) {
       DEBUG_STATS.phase = 'skip:guest-wall';
+      applyDisguise(false);
       if (window.console) console.info('[nga-wecom] 检测到访客限制页，未激活。登录后刷新页面即可。');
       return;
     }
@@ -1740,6 +1755,7 @@
         return out;
       }
     };
+    earlyDisguise(); // document-start 先行隐藏原生页，防首帧闪现
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', boot);
     } else {
