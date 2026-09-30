@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.2.7
+// @version      0.2.8
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.2.7';
+  var VERSION = '0.2.8';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -544,6 +544,12 @@
       img.removeAttribute('width');
       img.removeAttribute('height');
       img.removeAttribute('onclick');
+      // 剥离图片内联样式中的宽高声明（NGA 缩略图常带微小内联尺寸，曾致 9×14px 显示），
+      // 其余内联样式（颜色等）保留
+      var ist = img.getAttribute('style');
+      if (ist && /(^|;)\s*(width|height)\s*:/i.test(ist)) {
+        img.setAttribute('style', ist.replace(/(^|;)\s*(width|height)\s*:[^;]*/gi, '$1'));
+      }
       // NGA 自渲染的表情图与普通贴图区分：表情走行内小尺寸样式，不进灯箱
       var isEmo = (img.getAttribute('src') || '').indexOf('/ngabbs/post/smile/') >= 0;
       img.classList.add(isEmo ? 'ngaw-emo-img' : 'ngaw-img');
@@ -1006,7 +1012,7 @@
     '.ngaw-bubble .ngaw-subject{font-weight:600;margin-bottom:4px}',
     '.ngaw-bubble p{margin:0 0 .5em}',
     '.ngaw-bubble p:last-child{margin-bottom:0}',
-    '.ngaw-bubble img.ngaw-img{max-width:min(420px,100%);max-height:400px;border-radius:6px;display:inline-block;margin:4px 0;cursor:zoom-in;vertical-align:middle}',
+    '.ngaw-bubble img.ngaw-img{max-width:min(420px,100%);max-height:400px;min-width:60px;border-radius:6px;display:inline-block;margin:4px 0;cursor:zoom-in;vertical-align:middle}',
     '.ngaw-bubble img.ngaw-emo-img{height:1.7em;width:auto;max-width:none;vertical-align:-0.4em;display:inline-block;margin:0 1px;cursor:default}',
     '.ngaw-bubble a{color:#0082ef;text-decoration:none}',
     '.ngaw-bubble a:hover{text-decoration:underline}',
