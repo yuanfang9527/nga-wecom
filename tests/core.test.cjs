@@ -223,12 +223,12 @@ test('looksLikeBbcode: 识别原始 BBCode', () => {
   assert.strictEqual(m.looksLikeBbcode('普通已渲染文本，无标签'), false);
 });
 
-test('renderBbcode: 引用头统一为 [原帖徽章] 作者 (时间)（与 NGA 归一头部同协议）', () => {
+test('renderBbcode: 引用头只留回复人与时间（用户要求，无原帖徽章）', () => {
   const out = m.renderBbcode('[quote][pid=883366224,47641935,2]Reply[/pid] [b]Post by [uid=346237]rinoa360[/uid] (2026-09-30 15:56):[/b]\n黄果居然有iPhone的版本[/quote]');
   assert.ok(out.includes('class="ngaw-quote"'), '应有引用块');
-  assert.ok(out.includes('<a class="ngaw-quote-src" href="/read.php?pid=883366224">原帖</a>'), '原帖徽章');
   assert.ok(out.includes('<a class="ngaw-quote-user" href="/nuke.php?func=ucp&amp;uid=346237">rinoa360</a>'), '作者加粗链接');
   assert.ok(out.includes('<span class="ngaw-qtime">(2026-09-30 15:56)</span>'), '时间灰化');
+  assert.ok(!out.includes('原帖'), '不再有原帖徽章');
   assert.ok(!out.includes('Post by'), '英文 Post by 不再出现');
   assert.ok(out.includes('黄果居然有iPhone的版本'), '内容保留');
 });
