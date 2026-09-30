@@ -136,3 +136,16 @@ test('clamp: 边界约束（灯箱缩放用）', () => {
   assert.strictEqual(m.clamp(0.1, 0.25, 5), 0.25);
   assert.strictEqual(m.clamp(9, 0.25, 5), 5);
 });
+
+// ---------- isGuestWallText ----------
+
+test('isGuestWallText: 只认精确登录墙标志', () => {
+  // 拦截页：标题或正文含精确文案
+  assert.strictEqual(m.isGuestWallText('访客不能直接访问', '(ERROR:15) 访客不能直接访问'), true);
+  assert.strictEqual(m.isGuestWallText('访客不能直接访问', ''), true);
+  assert.strictEqual(m.isGuestWallText('NGA玩家社区', '正文……访客不能直接访问……后续'), true);
+  // 正常页面：泛化登录文案不再误伤（v0.1.1 收紧）
+  assert.strictEqual(m.isGuestWallText('NGA玩家社区', '请在登录后进行操作'), false);
+  assert.strictEqual(m.isGuestWallText('某主题_NGA玩家社区', '大量正常正文内容'), false);
+  assert.strictEqual(m.isGuestWallText('', ''), false);
+});

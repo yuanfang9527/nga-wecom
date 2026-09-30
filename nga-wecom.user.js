@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.0
+// @version      0.1.1
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.0';
+  var VERSION = '0.1.1';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -45,8 +45,8 @@
   var FAVICON_DATAURI =
     "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='14'%20fill='%230082ef'/%3E%3Cpath%20d='M16%2020h32a4%204%200%200%201%204%204v14a4%204%200%200%201-4%204H32l-9%209v-9h-7a4%204%200%200%201-4-4V24a4%204%200%200%201%204-4z'%20fill='%23fff'/%3E%3C/svg%3E";
 
-  // 调试统计：记录每个候选选择器的命中/未命中次数，供站内 NGAWECOM.debug() 校准
-  var DEBUG_STATS = { hits: {}, misses: {}, counts: {} };
+  // 调试统计：记录每个候选选择器的命中/未命中次数与启动流程相位，供站内 NGAWECOM.debug() 校准
+  var DEBUG_STATS = { hits: {}, misses: {}, counts: {}, phase: 'loaded' };
   function statHit(key) { DEBUG_STATS.hits[key] = (DEBUG_STATS.hits[key] || 0) + 1; }
   function statMiss(key) { DEBUG_STATS.misses[key] = (DEBUG_STATS.misses[key] || 0) + 1; }
   function statCount(key, val) { DEBUG_STATS.counts[key] = val; }
@@ -155,6 +155,13 @@
   }
 
   function clamp(x, lo, hi) { return Math.min(hi, Math.max(lo, x)); }
+
+  // 登录墙识别：只认精确标志（NGA 拦截页的标题与正文固定文案），
+  // 不使用"请在登录后"这类泛化文案，避免误伤正常页面
+  function isGuestWallText(title, bodyHead) {
+    return /访客不能直接访问/.test(String(title == null ? '' : title)) ||
+           /访客不能直接访问/.test(String(bodyHead == null ? '' : bodyHead));
+  }
 
   // ====================================================================
   // 3. 设置层
@@ -434,7 +441,14 @@
   // ---- 登录用户名识别（弱探测，失败则用设置面板手填）----
 
   function detectSelfName(root) {
-    var el = q1(root, ['#uame b', '#uame', '#mainmenu .block_txt', 'a[href*="nuke.php?func=logout"] b']);
+    // NGA 页面自身的全局对象优先（防御性访问，不存在则跳过）
+    try {
+      if (typeof commonui !== 'undefined' && commonui.userInfo && commonui.userInfo.username) {
+        var cu = String(commonui.userInfo.username).trim();
+        if (cu && cu.length <= 20) return cu;
+      }
+    } catch (e) { /* 保守跳过 */ }
+    var el = q1(root, ['#uame b', '#uame', '#mainmenu .block_txt', '#m_top .block_txt', 'a[href*="nuke.php?func=logout"] b']);
     if (el) {
       var name = (el.textContent || '').trim();
       if (name && name.length <= 20) return name;
@@ -851,6 +865,7 @@
     }).then(function () {
       var posts = extractPosts(document, location.href);
       if (!posts.length) {
+        DEBUG_STATS.phase = 'empty:thread';
         renderEmptyMain(ICONS.chat, '没有解析到楼层', 'F12 运行 NGAWECOM.debug() 查看选择器命中情况');
         showRoot();
         return;
@@ -869,6 +884,7 @@
       SCROLL.max = maxPageOf(document, tid);
       SCROLL.next = currentPage(location.href) + 1;
       setupInfiniteScroll(tid, title);
+      DEBUG_STATS.phase = 'rendered:thread';
       showRoot();
     });
 
@@ -949,6 +965,7 @@
     waitFor('#m_threads', WAIT_TIMEOUT).then(function () {
       var threads = extractThreadRows(document, location.href);
       renderSessionList(threads, 0, board.name);
+      DEBUG_STATS.phase = threads.length ? 'rendered:board' : 'empty:board';
     });
     renderChatHeader(board.name, '');
     renderEmptyMain(ICONS.chat, '选择左侧会话开始浏览', '点击主题查看楼层消息');
@@ -965,6 +982,7 @@
     renderSessionList(boards.map(function (b) { return { fid: b.fid, title: b.name, author: '', ts: 0, name: b.name }; }), 0, '版块');
     renderChatHeader('消息', '只读模式');
     renderEmptyMain(ICONS.doc, 'NGA 企微皮肤已启用', '从左侧选择版块开始浏览 · Alt+W 切回原版');
+    DEBUG_STATS.phase = boards.length ? 'rendered:home' : 'empty:home';
     showRoot();
   }
 
@@ -1159,6 +1177,7 @@
     currentPage: currentPage,
     buildPageUrl: buildPageUrl,
     clamp: clamp,
+    isGuestWallText: isGuestWallText,
     parseTimeText: parseTimeText,
     cleanPageTitle: cleanPageTitle
   };
@@ -1166,46 +1185,99 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = EXPORTS;
 
   function boot() {
+    DEBUG_STATS.phase = 'boot';
     SETTINGS = loadSettings();
     injectCss();
     buildShell();
     applyTheme();
     watchSystemTheme();
     setupShortcuts();
+    DEBUG_STATS.phase = 'ready';
 
     SELF_NAME = (SETTINGS.selfName || '').trim();
     if (!SELF_NAME) SELF_NAME = detectSelfName(document);
 
     // 登录墙/错误页：不激活伪装，让用户看到原生提示去登录
-    var bodyText = document.body ? (document.body.textContent || '').slice(0, 2000) : '';
-    if (/访客不能直接访问|请在登录后/.test(bodyText)) {
+    var bodyHead = document.body ? (document.body.textContent || '').slice(0, 500) : '';
+    if (isGuestWallText(document.title, bodyHead)) {
+      DEBUG_STATS.phase = 'skip:guest-wall';
       if (window.console) console.info('[nga-wecom] 检测到访客限制页，未激活。登录后刷新页面即可。');
       return;
     }
 
     if (!SETTINGS.enabled) {
+      DEBUG_STATS.phase = 'skip:disabled';
+      if (window.console) console.info('[nga-wecom] 皮肤当前为关闭状态，按 Alt+W 开启。');
       applyDisguise(false);
       return;
     }
 
     var route = routeOf(location);
+    DEBUG_STATS.phase = 'route:' + route;
     if (route === 'thread') initThreadPage();
     else if (route === 'board') initBoardPage();
     else initHomePage();
   }
 
   if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    // 元素签名：tag#id.class1.class2（取前 3 个 class）
+    function describeEl(el) {
+      if (!el || !el.tagName) return null;
+      var s = el.tagName.toLowerCase();
+      if (el.id) s += '#' + el.id;
+      var cls = el.getAttribute ? (el.getAttribute('class') || '') : '';
+      if (cls) s += '.' + cls.trim().split(/\s+/).slice(0, 3).join('.');
+      return s;
+    }
+
+    var PROBE_TARGETS = ['#m_posts', '#m_threads', '#m_nav', '#mainmenu', '#m_top', '#m_ct', 'body'];
+
     window.NGAWECOM = {
       version: VERSION,
       stats: DEBUG_STATS,
       toggle: function () { toggleEnabled(); },
+      // 一眼诊断：流程相位 / 开关状态 / 路由 / 容器存在性
       debug: function () {
+        var info = {
+          version: VERSION,
+          phase: DEBUG_STATS.phase,
+          enabled: SETTINGS ? SETTINGS.enabled : null,
+          route: routeOf(location),
+          url: location.href,
+          pageTitle: document.title,
+          hasPostsContainer: !!document.querySelector('#m_posts'),
+          hasThreadsContainer: !!document.querySelector('#m_threads'),
+          selectorHits: DEBUG_STATS.hits,
+          extractCounts: DEBUG_STATS.counts
+        };
+        if (window.console) console.log('[nga-wecom] 诊断信息:', info);
+        return info;
+      },
+      // 选择器命中数 + 关键容器前 8 个子元素结构采样，用于远程校准适配层
+      probe: function () {
+        var out = { selectors: {}, structure: {} };
+        var sets = {
+          posts: POST_ROW_CANDIDATES,
+          threads: THREAD_LINK_CANDIDATES,
+          authorLinks: AUTHOR_LINK_CANDIDATES
+        };
+        Object.keys(sets).forEach(function (k) {
+          out.selectors[k] = {};
+          sets[k].forEach(function (sel) {
+            try { out.selectors[k][sel] = document.querySelectorAll(sel).length; }
+            catch (e) { out.selectors[k][sel] = 'ERR'; }
+          });
+        });
+        PROBE_TARGETS.forEach(function (sel) {
+          var el = null;
+          try { el = document.querySelector(sel); } catch (e) { el = null; }
+          out.structure[sel] = el ? Array.prototype.slice.call(el.children, 0, 8).map(describeEl) : null;
+        });
         if (window.console) {
-          console.log('[nga-wecom] v' + VERSION, '统计:', DEBUG_STATS);
-          console.table(DEBUG_STATS.hits);
-          if (window.console.table) console.table(DEBUG_STATS.counts);
+          console.log('[nga-wecom] probe：selectors=候选选择器命中数，structure=容器前 8 个子元素签名');
+          console.log(JSON.stringify(out, null, 2));
         }
-        return DEBUG_STATS;
+        return out;
       }
     };
     if (document.readyState === 'loading') {

@@ -41,11 +41,15 @@
 
 ## 选择器校准流程（重要）
 
-NGA 对未登录请求完全拦截，本脚本的选择器基于社区已知的稳定 DOM 结构编写，采用**多候选防御性匹配**（每个提取点有 2~5 组候选选择器逐级回退）。如果装好后某些区域为空：
+NGA 对未登录请求完全拦截，本脚本的选择器基于社区已知的稳定 DOM 结构编写，采用**多候选防御性匹配**（每个提取点有 2~5 组候选选择器逐级回退）。如果装好后某些区域为空或页面没变化：
 
 1. `F12` 打开控制台，运行 `NGAWECOM.debug()`
-2. 查看 `hits` / `counts`：`posts=0` 说明楼层提取没命中，`threads=0` 说明主题列表没命中
-3. 在 `nga-wecom.user.js` 顶部搜索对应常量（如 `POST_ROW_CANDIDATES`、`THREAD_LINK_CANDIDATES`），把你在页面上看到的真实选择器加到候选列表**最前面**
+   - `phase` 显示启动流程停在哪一步：`skip:disabled` = 皮肤被关闭（按 `Alt+W` 开启）；`skip:guest-wall` = 误判登录墙；`route:*` / `rendered:*` = 正常进入对应页面
+   - `extractCounts` 里 `posts=0` 说明楼层提取没命中，`threads=0` 说明主题列表没命中
+2. 再运行 `NGAWECOM.probe()`
+   - `selectors`：各组候选选择器在当前页面的命中数量
+   - `structure`：`#m_posts` / `#m_threads` 等容器前 8 个子元素的 `tag#id.class` 签名——把这段 JSON 贴给维护者即可远程校准
+3. 自己修的话：在 `nga-wecom.user.js` 顶部搜索对应常量（如 `POST_ROW_CANDIDATES`、`THREAD_LINK_CANDIDATES`），把真实选择器加到候选列表**最前面**
 4. 保存后刷新页面
 
 ## 开发
