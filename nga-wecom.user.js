@@ -1,13 +1,15 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
-// @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.2.9
+// @namespace    https://github.com/yuanfang9527/nga-wecom
+// @version      1.0.0
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
 // @match        *://nga.178.com/*
 // @match        *://ngabbs.com/*
 // @match        *://www.ngabbs.com/*
+// @updateURL    https://raw.githubusercontent.com/yuanfang9527/nga-wecom/main/nga-wecom.user.js
+// @downloadURL  https://raw.githubusercontent.com/yuanfang9527/nga-wecom/main/nga-wecom.user.js
 // @grant        none
 // @noframes
 // @run-at       document-start
@@ -35,7 +37,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.2.9';
+  var VERSION = '1.0.0';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
