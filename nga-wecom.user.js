@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.2.4
+// @version      0.2.5
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.2.4';
+  var VERSION = '0.2.5';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -304,13 +304,13 @@
       s = s.replace(reQuote, '<div class="ngaw-quote">$1</div>');
     }
 
-    // 引用头统一（只留回复人与时间）：[pid=..]Reply[/pid] [b]Post by [uid=..]name[/uid]
-    // (time):[/b] 整体替换为 加粗作者+灰色时间；散件 pid/uid 兜底见下
+    // 引用头统一为"回复人：内容"紧凑样式：[pid=..]Reply[/pid] [b]Post by
+    // [uid=..]name[/uid] (time):[/b] 整体替换为 加粗作者+冒号（时间去除，
+    // 尾部空白一并吞掉使内容紧随冒号）；散件 pid/uid 兜底见下
     s = s.replace(
-      /\[pid=(\d+)(?:,[^\]]*)?\]\s*([^\[]*)\s*\[\/pid\]\s*\[b\]\s*Post\s*by\s*\[uid=(\d+)\]([^\[]*)\[\/uid\]\s*\(([^)]*)\)\s*:?\s*\[\/b\]/gi,
-      function (all, pid, label, uid, name, time) {
-        return '<a class="ngaw-quote-user" href="/nuke.php?func=ucp&amp;uid=' + uid + '">' + name + '</a>' +
-          ' <span class="ngaw-qtime">(' + time + ')</span>';
+      /\[pid=(\d+)(?:,[^\]]*)?\]\s*([^\[]*)\s*\[\/pid\]\s*\[b\]\s*Post\s*by\s*\[uid=(\d+)\]([^\[]*)\[\/uid\]\s*\([^)]*\)\s*:?\s*\[\/b\]\s*/gi,
+      function (all, pid, label, uid, name) {
+        return '<a class="ngaw-quote-user" href="/nuke.php?func=ucp&amp;uid=' + uid + '">' + name + '：</a>';
       });
 
     // 引用头元数据散件兜底：单独出现的 [pid=...]、[uid=...]
@@ -462,8 +462,8 @@
       var qdiv = document.createElement('div');
       qdiv.className = 'ngaw-quote';
       while (qn.firstChild) qdiv.appendChild(qn.firstChild);
-      // 头部精简（用户要求只留回复人与文案）：删 '+' 跳原帖链接、R 死链与孤立
-      // " by " 文本；作者链接去方括号加粗；时间灰化
+      // 头部精简为"回复人：内容"紧凑样式（用户指定）：删 '+' 跳原帖链接、R 死链、
+      // " by " 文本与时间；作者去方括号加粗并接冒号
       Array.prototype.forEach.call(qdiv.querySelectorAll('a'), function (a) {
         var href = a.getAttribute('href') || '';
         var title = a.getAttribute('title') || '';
@@ -471,7 +471,7 @@
         if (title === '打开链接' || /#pid.+Anchor/.test(href)) { a.remove(); return; }
         if (href.indexOf('nuke.php?func=ucp') >= 0) {
           a.classList.add('ngaw-quote-user');
-          a.textContent = String(a.textContent || '').replace(/^\[+|\]+$/g, '').trim();
+          a.textContent = String(a.textContent || '').replace(/^\[+|\]+$/g, '').trim() + '：';
         }
       });
       Array.prototype.forEach.call(qdiv.childNodes, function (n) {
@@ -480,7 +480,9 @@
       Array.prototype.forEach.call(qdiv.querySelectorAll('span'), function (sp) {
         if (/(^|\s)(silver|xtxt)(\s|$)/.test(String(sp.getAttribute('class') || '')) &&
           /\(\d{2,4}[-/]\d/.test(sp.textContent || '')) {
-          sp.classList.add('ngaw-qtime');
+          var sib = sp.nextSibling;
+          if (sib && sib.nodeName === 'BR') sib.remove(); // 收起头部与正文间空行
+          sp.remove(); // 时间去掉，只留回复人与文案
         }
       });
       qn.parentNode.replaceChild(qdiv, qn);
@@ -982,10 +984,9 @@
     '.ngaw-bubble img.ngaw-emo-img{height:1.7em;width:auto;max-width:none;vertical-align:-0.4em;display:inline-block;margin:0 1px;cursor:default}',
     '.ngaw-bubble a{color:#0082ef;text-decoration:none}',
     '.ngaw-bubble a:hover{text-decoration:underline}',
-    '.ngaw-bubble .ngaw-quote,.ngaw-bubble blockquote{border-left:3px solid #cfcfcf;background:var(--quote-bg);color:var(--quote-fg);padding:6px 10px;margin:6px 0;border-radius:4px;font-size:13px;display:block}',
-    '.ngaw-bubble .ngaw-quote .ngaw-quote,.ngaw-bubble blockquote blockquote{margin:4px 0}',
-    '.ngaw-bubble .ngaw-quote .ngaw-quote-user{font-weight:600}',
-    '.ngaw-bubble .ngaw-quote .ngaw-qtime{color:var(--sub);font-size:12px}',
+    '.ngaw-bubble .ngaw-quote,.ngaw-bubble blockquote{background:var(--quote-bg);color:var(--quote-fg);padding:5px 9px;margin:4px 0;border-radius:6px;font-size:12px;display:block;line-height:1.55}',
+    '.ngaw-bubble .ngaw-quote .ngaw-quote,.ngaw-bubble blockquote blockquote{margin:3px 0}',
+    '.ngaw-bubble .ngaw-quote .ngaw-quote-user{font-weight:600;text-decoration:none}',
     '.ngaw-bubble .ngaw-code{background:var(--quote-bg);border-radius:6px;padding:8px 10px;font-family:Consolas,Menlo,monospace;font-size:12px;white-space:pre-wrap;margin:6px 0;overflow-x:auto}',
     '.ngaw-bubble .ngaw-emo{display:inline-block;padding:0 2px;font-size:15px;opacity:.85;cursor:default}',
     '.ngaw-bubble li{margin-left:18px}',
