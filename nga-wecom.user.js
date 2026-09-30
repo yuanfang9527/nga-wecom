@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.5
+// @version      0.1.6
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.5';
+  var VERSION = '0.1.6';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -751,6 +751,7 @@
     btnChat.onclick = function () { location.href = '/index.php'; };
 
     var btnContacts = h('button');
+    btnContacts.id = 'ngaw-nav-contacts';
     btnContacts.innerHTML = ICONS.contacts;
     btnContacts.title = '版块';
     btnContacts.onclick = function () { toggleBoardPanel(); };
@@ -928,14 +929,30 @@
     return s;
   }
 
-  function renderSessionList(items, currentTid, headerTitle) {
+  function boardsEntryEl() {
+    var s = h('div', 'ngaw-session');
+    s.appendChild(avatarEl('版块', ''));
+    var mid = h('div', 'mid');
+    var row1 = h('div', 'row1');
+    var t = h('div', 't', '浏览全部版块');
+    t.style.color = '#0082ef';
+    row1.appendChild(t);
+    mid.appendChild(row1);
+    s.appendChild(mid);
+    s.onclick = function () { toggleBoardPanel(); };
+    return s;
+  }
+
+  function renderSessionList(items, currentTid, headerTitle, pinBoardsEntry) {
     var box = document.getElementById('ngaw-sessions');
     if (!box) return;
+    if (box.dataset.mode === 'boards') return; // 版块面板打开时不被异步结果覆盖
     box.innerHTML = '';
     if (headerTitle) {
       var h1 = ROOT ? ROOT.querySelector('.ngaw-list h1') : null;
       if (h1) h1.textContent = truncate(headerTitle, 12);
     }
+    if (pinBoardsEntry) box.appendChild(boardsEntryEl());
     if (!items.length) {
       box.innerHTML = '<div class="ngaw-hint">没有抓到会话列表<br>运行 NGAWECOM.debug() 检查选择器命中</div>';
       return;
@@ -1040,16 +1057,16 @@
     // 侧栏：同版块主题列表
     var board = extractBoardInfo(document);
     if (board) {
-      renderSessionList([], 0, board.name);
+      renderSessionList([], 0, board.name, true);
       fetchAndParse('/thread.php?fid=' + encodeURIComponent(board.fid)).then(function (doc) {
         var threads = extractThreadRows(doc, location.origin + '/');
-        if (threads.length) renderSessionList(threads, tid, board.name);
-        else renderSessionList([{ tid: tid, title: cleanPageTitle(document.title), author: '', ts: 0 }], tid, board.name);
+        if (threads.length) renderSessionList(threads, tid, board.name, true);
+        else renderSessionList([{ tid: tid, title: cleanPageTitle(document.title), author: '', ts: 0 }], tid, board.name, true);
       }).catch(function () {
-        renderSessionList([{ tid: tid, title: cleanPageTitle(document.title), author: '', ts: 0 }], tid, board.name);
+        renderSessionList([{ tid: tid, title: cleanPageTitle(document.title), author: '', ts: 0 }], tid, board.name, true);
       });
     } else {
-      renderSessionList([{ tid: tid, title: cleanPageTitle(document.title), author: '', ts: 0 }], tid, '');
+      renderSessionList([{ tid: tid, title: cleanPageTitle(document.title), author: '', ts: 0 }], tid, '', true);
     }
   }
 
@@ -1114,7 +1131,7 @@
     // 版块页容器 id 未经实测（read.php 上为 null），等待条件放宽为主题链接出现即可
     waitFor('#m_threads, a[href*="read.php?tid="]', WAIT_TIMEOUT).then(function () {
       var threads = extractThreadRows(document, location.href);
-      renderSessionList(threads, 0, board.name);
+      renderSessionList(threads, 0, board.name, true);
       DEBUG_STATS.phase = threads.length ? 'rendered:board' : 'empty:board';
     });
     renderChatHeader(board.name, '');
@@ -1139,21 +1156,31 @@
   // 左栏“版块”按钮：会话区切换为版块快捷列表，再次点击还原
   var SESSIONS_BACKUP = null;
 
+  function closeBoardPanel(box) {
+    box.dataset.mode = '';
+    var btn = document.getElementById('ngaw-nav-contacts');
+    if (btn) btn.classList.remove('active');
+    if (SESSIONS_BACKUP != null) box.innerHTML = SESSIONS_BACKUP;
+  }
+
   function toggleBoardPanel() {
     var box = document.getElementById('ngaw-sessions');
     if (!box) return;
-    if (box.dataset.mode === 'boards') {
-      box.dataset.mode = '';
-      if (SESSIONS_BACKUP != null) box.innerHTML = SESSIONS_BACKUP;
-      return;
-    }
+    if (box.dataset.mode === 'boards') { closeBoardPanel(box); return; }
     SESSIONS_BACKUP = box.innerHTML;
     var boards = BOARD_CACHE;
     var render = function (list) {
       box.dataset.mode = 'boards';
+      var btn = document.getElementById('ngaw-nav-contacts');
+      if (btn) btn.classList.add('active');
       box.innerHTML = '';
-      box.appendChild(h('div', 'ngaw-hint', '版块导航（点击进入，再点左栏图标返回）'));
-      list.slice(0, 50).forEach(function (b) {
+      var back = h('div', 'ngaw-session');
+      back.appendChild(avatarEl('返', ''));
+      back.appendChild(h('div', 'mid', '<div class="row1"><div class="t">返回会话列表</div></div>'));
+      back.onclick = function () { closeBoardPanel(box); };
+      box.appendChild(back);
+      box.appendChild(h('div', 'ngaw-hint', '全部版块（点击进入）'));
+      list.slice(0, 60).forEach(function (b) {
         var it = { fid: b.fid, title: b.name, author: '', ts: 0 };
         box.appendChild(sessionEl(it, 0));
       });
