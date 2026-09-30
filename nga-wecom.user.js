@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.7
+// @version      0.1.8
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.7';
+  var VERSION = '0.1.8';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -284,6 +284,25 @@
     try { localStorage.setItem(LS_KEY, JSON.stringify(s)); } catch (e) { /* 隐私模式等场景忽略 */ }
   }
 
+  // 版块列表缓存：NGA 首页版块由脚本渲染，fetch 拿到的 HTML 无版块链接，
+  // 内存变量跨页面失效——必须持久化（7 天有效期，首页成功提取时刷新）
+  var LS_BOARDS_KEY = 'ngawecom:boards';
+  var BOARDS_CACHE_TTL = 7 * 24 * 3600 * 1000;
+
+  function loadBoardCache() {
+    try {
+      var o = JSON.parse(localStorage.getItem(LS_BOARDS_KEY) || 'null');
+      if (o && Array.isArray(o.boards) && o.boards.length && Date.now() - (o.ts || 0) < BOARDS_CACHE_TTL) {
+        return o.boards;
+      }
+    } catch (e) { }
+    return null;
+  }
+
+  function saveBoardCache(boards) {
+    try { localStorage.setItem(LS_BOARDS_KEY, JSON.stringify({ ts: Date.now(), boards: boards })); } catch (e) { }
+  }
+
   // ====================================================================
   // 4. 内容清洗层（依赖 DOM，仅浏览器执行）
   // ====================================================================
@@ -479,6 +498,16 @@
   // 无效主题链接文本：翻页/附件等，含纯数字页码（实测每主题有标题+页码跳转+最后回复共 ~6 个链接）
   var BAD_LINK_TEXT = /^(附件|上一页|下一页|首页|末页|尾页|\.\.\.|«|»|next|prev|\d+)$/i;
 
+  // 主题链接文本净化：先整段去掉成对媒体标签（[img]x[/img] 等），
+  // 再去单侧 BBCode/表情/前缀标签残留（如 [s:ac:哭]、[讨论]），压缩空白
+  function cleanThreadTitle(text) {
+    return String(text == null ? '' : text)
+      .replace(/\[(img|url|flash|video|audio)[^\]]*\][^\[]*\[\/\1\]/gi, ' ')
+      .replace(/\[[^\]\n]{0,24}\]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   function isBadThreadLinkText(text) {
     var t = String(text == null ? '' : text).trim();
     return !t || BAD_LINK_TEXT.test(t);
@@ -509,19 +538,27 @@
   function extractThreadRows(root, baseUrl) {
     var links = qAll(root, THREAD_LINK_CANDIDATES);
     var threads = [];
-    var seen = {};
     var curBase = baseUrl || (typeof location !== 'undefined' ? location.href : 'https://bbs.nga.cn/');
 
+    // 第一遍：每个主题保留文本最长的合格链接作标题——
+    // 行内约 6 个 tid 链接（标题/页码/最后回复），DOM 序第一个未必是标题，标题文本必然最长
+    var best = {};
     links.forEach(function (a) {
-      var title = (a.textContent || '').trim();
+      var title = cleanThreadTitle(a.textContent || '');
       if (!title || isBadThreadLinkText(title)) return;
       var href = a.getAttribute('href') || '';
       var tid = parseQueryParam(href, 'tid');
-      if (!tid || seen[tid]) return;
-      seen[tid] = 1;
+      if (!tid) return;
+      if (!best[tid] || title.length > best[tid].title.length) {
+        best[tid] = { title: title, href: href, a: a };
+      }
+    });
 
-      var row = threadRowOf(a) || a.parentElement;
-      var rowText = row ? (row.textContent || '') : title;
+    // 第二遍：计算行上下文与作者/时间/回复数
+    Object.keys(best).forEach(function (tid) {
+      var b = best[tid];
+      var row = threadRowOf(b.a) || b.a.parentElement;
+      var rowText = row ? (row.textContent || '') : b.title;
 
       var authorLink = null;
       for (var i = 0; i < AUTHOR_LINK_CANDIDATES.length && !authorLink; i++) {
@@ -535,11 +572,11 @@
 
       threads.push({
         tid: tid,
-        title: truncate(title, 40),
+        title: truncate(b.title, 40),
         author: author,
         replies: replies,
         ts: parseTimeText(rowText),
-        href: absolutize(href, curBase)
+        href: absolutize(b.href, curBase)
       });
     });
 
@@ -642,7 +679,7 @@
     '.ngaw-search{display:flex;align-items:center;gap:6px;height:28px;border-radius:6px;background:var(--input-bg);color:var(--sub);font-size:12px;padding:0 10px;flex:1}',
     '.ngaw-search svg{width:13px;height:13px;flex-shrink:0}',
     '.ngaw-sessions{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:4px 0 12px}',
-    '.ngaw-session{display:flex;gap:11px;padding:10px 13px;cursor:pointer;align-items:center}',
+    '.ngaw-session{display:flex;gap:11px;padding:10px 13px;cursor:pointer;align-items:center;color:inherit;text-decoration:none}',
     '.ngaw-session:hover{background:var(--hover)}',
     '.ngaw-session.current{background:var(--active)}',
     '.ngaw-session .mid{flex:1;min-width:0}',
@@ -913,8 +950,14 @@
     return n;
   }
 
+  // 会话条目：用真正的 <a href> 承载导航——默认导航不依赖 JS 事件链，
+  // 即使 NGA 全局脚本在捕获阶段拦截事件也能点击（与 onclick 互为双保险）
   function sessionEl(item, currentTid) {
-    var s = h('div', 'ngaw-session' + (currentTid && item.tid === currentTid ? ' current' : ''));
+    var href = item.tid ? '/read.php?tid=' + encodeURIComponent(item.tid)
+      : (item.fid ? '/thread.php?fid=' + encodeURIComponent(item.fid) : '');
+    var s = document.createElement(href ? 'a' : 'div');
+    s.className = 'ngaw-session' + (currentTid && item.tid === currentTid ? ' current' : '');
+    if (href) s.setAttribute('href', href);
     s.appendChild(avatarEl(item.author || item.name));
     var mid = h('div', 'mid');
     var row1 = h('div', 'row1');
@@ -926,10 +969,6 @@
     mid.appendChild(row1);
     mid.appendChild(row2);
     s.appendChild(mid);
-    s.onclick = function () {
-      if (item.tid) location.href = '/read.php?tid=' + encodeURIComponent(item.tid);
-      else if (item.fid) location.href = '/thread.php?fid=' + encodeURIComponent(item.fid);
-    };
     return s;
   }
 
@@ -1132,8 +1171,9 @@
 
   function initBoardPage() {
     var board = extractBoardInfo(document) || { fid: parseQueryParam(location.search, 'fid'), name: '版块' };
-    // 版块页容器 id 未经实测（read.php 上为 null），等待条件放宽为主题链接出现即可
-    waitFor('#m_threads, a[href*="read.php?tid="]', WAIT_TIMEOUT).then(function () {
+    // 版块页：等 #m_threads 真正出现再提取（board probe 已证实存在；
+    // 若等任意 tid 链接会抢跑，把顶栏最近浏览等非列表链接当成主题）
+    waitFor('#m_threads', WAIT_TIMEOUT).then(function () {
       var threads = extractThreadRows(document, location.href);
       renderSessionList(threads, 0, board.name, true);
       DEBUG_STATS.phase = threads.length ? 'rendered:board' : 'empty:board';
@@ -1157,6 +1197,7 @@
     waitFor('a[href*="thread.php?fid="], a[href*="fid="]', WAIT_TIMEOUT).then(function () {
       var boards = extractBoardLinks(document);
       BOARD_CACHE = boards;
+      if (boards.length) saveBoardCache(boards);
       DEBUG_STATS.phase = boards.length ? 'rendered:home' : 'empty:home';
       if (boards.length) {
         renderSessionList(boards.map(function (b) { return { fid: b.fid, title: b.name, author: '', ts: 0, name: b.name }; }), 0, '版块');
@@ -1179,7 +1220,8 @@
     if (!box) return;
     if (box.dataset.mode === 'boards') { closeBoardPanel(box); return; }
     SESSIONS_BACKUP = box.innerHTML;
-    var boards = BOARD_CACHE;
+    // 内存缓存跨页面失效，优先读 localStorage 持久化缓存；fetch 首页对脚本渲染的版块无效，仅作兜底
+    var boards = BOARD_CACHE || loadBoardCache();
     var render = function (list) {
       box.dataset.mode = 'boards';
       var btn = document.getElementById('ngaw-nav-contacts');
@@ -1190,6 +1232,10 @@
       back.appendChild(h('div', 'mid', '<div class="row1"><div class="t">返回会话列表</div></div>'));
       back.onclick = function () { closeBoardPanel(box); };
       box.appendChild(back);
+      if (!list.length) {
+        box.appendChild(h('div', 'ngaw-hint', '未抓到版块链接<br>先打开 NGA 首页刷新版块缓存'));
+        return;
+      }
       box.appendChild(h('div', 'ngaw-hint', '全部版块（点击进入）'));
       list.slice(0, 60).forEach(function (b) {
         var it = { fid: b.fid, title: b.name, author: '', ts: 0 };
@@ -1380,6 +1426,7 @@
     clamp: clamp,
     isGuestWallText: isGuestWallText,
     isBadThreadLinkText: isBadThreadLinkText,
+    cleanThreadTitle: cleanThreadTitle,
     decodeHtmlBuffer: decodeHtmlBuffer,
     looksLikeBbcode: looksLikeBbcode,
     renderBbcode: renderBbcode,

@@ -219,6 +219,16 @@ test('renderBbcode: color 走白名单，非法值丢弃样式', () => {
   assert.ok(m.renderBbcode('[size=5]大[/size]').includes('font-size:18px'));
 });
 
+// ---------- cleanThreadTitle ----------
+
+test('cleanThreadTitle: 去 BBCode/表情/前缀标签残留并压缩空白', () => {
+  assert.strictEqual(m.cleanThreadTitle('[s:ac:哭] 问一下什么才叫真正的顶美？'), '问一下什么才叫真正的顶美？');
+  assert.strictEqual(m.cleanThreadTitle('[讨论]  关于新版本\n  的一些看法'), '关于新版本 的一些看法');
+  assert.strictEqual(m.cleanThreadTitle('[img]./mon_2024/abc.png[/img]纯标题'), '纯标题');
+  assert.strictEqual(m.cleanThreadTitle('  '), '');
+  assert.strictEqual(m.cleanThreadTitle(null), '');
+});
+
 // ---------- isGuestWallText ----------
 
 test('isGuestWallText: 只认精确登录墙标志', () => {
