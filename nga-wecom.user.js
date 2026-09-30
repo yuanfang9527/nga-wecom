@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.2.8
+// @version      0.2.9
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.2.8';
+  var VERSION = '0.2.9';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -520,11 +520,14 @@
 
     var imgs = frag.querySelectorAll('img');
     Array.prototype.forEach.call(imgs, function (img) {
-      var lazy = img.getAttribute('data-src') || img.getAttribute('data-original') || img.getAttribute('data-echo');
+      // NGA 懒加载实测属性（v0.2.9 probe 确认）：src=about:blank 占位，真实地址在
+      // data-srclazy，原尺寸在 data-nw/data-nh，内联带 max-height:1em 微缩样式
+      var lazy = img.getAttribute('data-srclazy') || img.getAttribute('data-src') ||
+        img.getAttribute('data-original') || img.getAttribute('data-echo');
       if (lazy) img.setAttribute('src', lazy);
       var src = img.getAttribute('src') || '';
       // 懒加载属性通用兜底：src 缺失或形如占位图时，任意属性值长得像图片地址
-      // （mon_ 附件相对路径或图片站 http 地址）即提升为 src——NGA 的懒加载属性名未实测确认
+      // （mon_ 附件相对路径或图片站 http 地址）即提升为 src
       if (!src || /placeholder|loading|blank|spacer|1x1|\btrans\.gif/i.test(src)) {
         var attrs = Array.prototype.slice.call(img.attributes);
         for (var ai = 0; ai < attrs.length; ai++) {
@@ -544,11 +547,12 @@
       img.removeAttribute('width');
       img.removeAttribute('height');
       img.removeAttribute('onclick');
-      // 剥离图片内联样式中的宽高声明（NGA 缩略图常带微小内联尺寸，曾致 9×14px 显示），
+      // 剥离图片内联样式中的全部宽高类声明（width/height/max-*/min-*——
+      // 实测 NGA 缩略图带 max-height:1em，曾致 682×1024 原图显示为 9×14px），
       // 其余内联样式（颜色等）保留
       var ist = img.getAttribute('style');
-      if (ist && /(^|;)\s*(width|height)\s*:/i.test(ist)) {
-        img.setAttribute('style', ist.replace(/(^|;)\s*(width|height)\s*:[^;]*/gi, '$1'));
+      if (ist && /(^|;)\s*(min-|max-)?(width|height)\s*:/i.test(ist)) {
+        img.setAttribute('style', ist.replace(/(^|;)\s*(min-|max-)?(width|height)\s*:[^;]*/gi, '$1'));
       }
       // NGA 自渲染的表情图与普通贴图区分：表情走行内小尺寸样式，不进灯箱
       var isEmo = (img.getAttribute('src') || '').indexOf('/ngabbs/post/smile/') >= 0;
