@@ -120,6 +120,7 @@ test('buildPageUrl: 新增或替换 page 参数', () => {
 test('parseTimeText: NGA 时间文本解析', () => {
   assert.strictEqual(m.parseTimeText('发表于 2026-09-30 12:34:56'), tsOf(2026, 9, 30, 12, 34));
   assert.strictEqual(m.parseTimeText('2026/9/1 8:05'), tsOf(2026, 9, 1, 8, 5));
+  assert.strictEqual(m.parseTimeText('26-09-30 16:43'), tsOf(2026, 9, 30, 16, 43)); // 两位年（postdate title 实测）
   assert.strictEqual(m.parseTimeText('没有时间'), 0);
 });
 
@@ -158,6 +159,10 @@ test('isBadThreadLinkText: 过滤翻页/页码/时间戳链接', () => {
   assert.strictEqual(m.isBadThreadLinkText('15:56'), true);
   assert.strictEqual(m.isBadThreadLinkText('最后回复'), true);
   assert.strictEqual(m.isBadThreadLinkText('https://bbs.nga.cn/read.php?tid=7436149 …'), true); // 置顶区 URL 文本（实测样本）
+  assert.strictEqual(m.isBadThreadLinkText('30分钟前'), true);   // replydate 相对时间（实测样本）
+  assert.strictEqual(m.isBadThreadLinkText('5分钟前'), true);
+  assert.strictEqual(m.isBadThreadLinkText('今天 14:58'), true);
+  assert.strictEqual(m.isBadThreadLinkText('3天前'), true);
   assert.strictEqual(m.isBadThreadLinkText('【讨论】正常的主题标题'), false);
   assert.strictEqual(m.isBadThreadLinkText(''), true);
 });

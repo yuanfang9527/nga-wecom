@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.11
+// @version      0.1.12
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.11';
+  var VERSION = '0.1.12';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -396,13 +396,15 @@
     'a[href*="nuke.php?func=ucp&username"]'
   ];
 
-  var TIME_RE = /(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T]*(\d{1,2}):(\d{2})/;
+  var TIME_RE = /(\d{2}|\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T]*(\d{1,2}):(\d{2})/;
   var FLOOR_RE = /(\d+)\s*楼/;
 
   function parseTimeText(text) {
     var m = TIME_RE.exec(text || '');
     if (!m) return 0;
-    var d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10),
+    var year = parseInt(m[1], 10);
+    if (year < 100) year += year < 70 ? 2000 : 1900; // NGA 时间戳 title 为两位年（"26-09-30 16:43"）
+    var d = new Date(year, parseInt(m[2], 10) - 1, parseInt(m[3], 10),
       parseInt(m[4], 10), parseInt(m[5], 10));
     var ts = Math.floor(d.getTime() / 1000);
     return isNaN(ts) ? 0 : ts;
@@ -517,6 +519,9 @@
     if (/^最后回复|^最后发表/.test(t)) return true;
     // 链接文本本身是 URL（实测置顶区老帖的链接文本是绝对地址形态），非标题
     if (/^https?:\/\//i.test(t)) return true;
+    // 相对时间文本（"最后回复"列的 replydate 链接）也不作为标题
+    if (/^\d+\s*(秒|分钟|小时|天|周|月|年)前$/.test(t)) return true;
+    if (/^(今天|昨天|前天)(\s|\d)/.test(t)) return true;
     return false;
   }
 
@@ -556,9 +561,52 @@
   }
 
   function extractThreadRows(root, baseUrl) {
-    var links = qAll(root, THREAD_LINK_CANDIDATES);
     var threads = [];
     var curBase = baseUrl || (typeof location !== 'undefined' ? location.href : 'https://bbs.nga.cn/');
+
+    // 精确路径（v0.1.12 实测行结构）：tr.topicrow 内
+    //   标题 a.topic（含 [标签] span 前缀）、作者 a.author（内嵌首字色块 b）、
+    //   回复数 a.replies、发布时间 span.postdate[title="26-09-30 16:43"]、
+    //   最后回复 a.replydate[title]（其文本"5分钟前"曾被误当标题）
+    var topicLinks = [];
+    try { topicLinks = Array.prototype.slice.call(root.querySelectorAll('#m_threads a.topic')); } catch (e) { topicLinks = []; }
+    if (topicLinks.length) {
+      statHit('#m_threads a.topic');
+      var seenT = {};
+      topicLinks.forEach(function (a) {
+        if (isExcludedTopicArea(a)) return;
+        var tid = parseQueryParam(a.getAttribute('href') || '', 'tid');
+        if (!tid || seenT[tid]) return;
+        seenT[tid] = 1;
+        var title = cleanThreadTitle(a.textContent || '');
+        if (!title || isBadThreadLinkText(title)) return;
+        var row = (a.closest && (a.closest('tr.topicrow') || a.closest('tr'))) || threadRowOf(a) || a.parentElement;
+        var authorEl = null, repliesEl = null, dateEl = null;
+        try {
+          authorEl = row.querySelector('a.author');
+          repliesEl = row.querySelector('a.replies');
+          dateEl = row.querySelector('span.postdate');
+        } catch (e) { /* row 无效时保持 null */ }
+        var author = authorEl ? cleanThreadTitle(authorEl.textContent) : '';
+        if (!author || /^(UID:)?\d+$/.test(author)) author = '坛友'; // "UID:0"=已注销用户
+        var replies = repliesEl ? (parseInt(repliesEl.textContent, 10) || 0) : 0;
+        var ts = parseTimeText((dateEl && dateEl.getAttribute('title')) || '');
+        threads.push({
+          tid: tid,
+          title: truncate(title, 40),
+          author: author,
+          replies: replies,
+          ts: ts,
+          href: absolutize(a.getAttribute('href') || '', curBase)
+        });
+      });
+      statCount('threads', threads.length);
+      return threads;
+    }
+    statMiss('#m_threads a.topic');
+
+    // 通用兜底路径（未知结构的其他布局）
+    var links = qAll(root, THREAD_LINK_CANDIDATES);
 
     // 第一遍：每个主题保留文本最长的合格链接作标题——
     // 行内约 6 个 tid 链接（标题/页码/最后回复），DOM 序第一个未必是标题，标题文本必然最长
