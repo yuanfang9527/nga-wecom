@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.8
+// @version      0.1.9
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.8';
+  var VERSION = '0.1.9';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -513,6 +513,12 @@
     return !t || BAD_LINK_TEXT.test(t);
   }
 
+  // 公告类行识别：NGA 公告行结构特殊（多条链接挤在展示行内），标题常错乱；
+  // 用户明确不需要公告，标题或行文本含"公告"即过滤
+  function isAnnounceText(title, rowText) {
+    return /公\s*告/.test(String(title || '')) || /公\s*告/.test(String(rowText || ''));
+  }
+
   // 找到主题链接所属的“主题行”：向上爬，父节点出现其他主题的链接（tid 不同）或
   // 到达 #m_threads 容器即停。与 postRowOf 同一模式，兼容 div/table 任意行结构。
   function threadRowOf(linkEl) {
@@ -559,6 +565,9 @@
       var b = best[tid];
       var row = threadRowOf(b.a) || b.a.parentElement;
       var rowText = row ? (row.textContent || '') : b.title;
+
+      // 公告类行：结构特殊标题常错乱，用户明确不需要，直接过滤
+      if (isAnnounceText(b.title, rowText)) return;
 
       var authorLink = null;
       for (var i = 0; i < AUTHOR_LINK_CANDIDATES.length && !authorLink; i++) {
@@ -958,7 +967,7 @@
     var s = document.createElement(href ? 'a' : 'div');
     s.className = 'ngaw-session' + (currentTid && item.tid === currentTid ? ' current' : '');
     if (href) s.setAttribute('href', href);
-    s.appendChild(avatarEl(item.author || item.name));
+    s.appendChild(avatarEl(item.author || item.name || item.title || '版'));
     var mid = h('div', 'mid');
     var row1 = h('div', 'row1');
     row1.appendChild(h('div', 't', escapeHtml(item.title || item.name)));
@@ -1238,7 +1247,7 @@
       }
       box.appendChild(h('div', 'ngaw-hint', '全部版块（点击进入）'));
       list.slice(0, 60).forEach(function (b) {
-        var it = { fid: b.fid, title: b.name, author: '', ts: 0 };
+        var it = { fid: b.fid, title: b.name, author: '', ts: 0, name: b.name };
         box.appendChild(sessionEl(it, 0));
       });
     };
@@ -1426,6 +1435,7 @@
     clamp: clamp,
     isGuestWallText: isGuestWallText,
     isBadThreadLinkText: isBadThreadLinkText,
+    isAnnounceText: isAnnounceText,
     cleanThreadTitle: cleanThreadTitle,
     decodeHtmlBuffer: decodeHtmlBuffer,
     looksLikeBbcode: looksLikeBbcode,

@@ -219,6 +219,15 @@ test('renderBbcode: color 走白名单，非法值丢弃样式', () => {
   assert.ok(m.renderBbcode('[size=5]大[/size]').includes('font-size:18px'));
 });
 
+// ---------- isAnnounceText ----------
+
+test('isAnnounceText: 公告类标题/行文本识别', () => {
+  assert.strictEqual(m.isAnnounceText('【公告】论坛版规更新', ''), true);
+  assert.strictEqual(m.isAnnounceText('普通标题', '回复 12 公告测试'), true); // 行文本含公告标记
+  assert.strictEqual(m.isAnnounceText('普 通 标 题', ''), false);
+  assert.strictEqual(m.isAnnounceText('', ''), false);
+});
+
 // ---------- cleanThreadTitle ----------
 
 test('cleanThreadTitle: 去 BBCode/表情/前缀标签残留并压缩空白', () => {
