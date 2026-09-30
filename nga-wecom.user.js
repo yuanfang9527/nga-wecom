@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.2.6
+// @version      0.2.7
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.2.6';
+  var VERSION = '0.2.7';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -522,7 +522,20 @@
     Array.prototype.forEach.call(imgs, function (img) {
       var lazy = img.getAttribute('data-src') || img.getAttribute('data-original') || img.getAttribute('data-echo');
       if (lazy) img.setAttribute('src', lazy);
-      var src = img.getAttribute('src');
+      var src = img.getAttribute('src') || '';
+      // 懒加载属性通用兜底：src 缺失或形如占位图时，任意属性值长得像图片地址
+      // （mon_ 附件相对路径或图片站 http 地址）即提升为 src——NGA 的懒加载属性名未实测确认
+      if (!src || /placeholder|loading|blank|spacer|1x1|\btrans\.gif/i.test(src)) {
+        var attrs = Array.prototype.slice.call(img.attributes);
+        for (var ai = 0; ai < attrs.length; ai++) {
+          var v = String(attrs[ai].value || '');
+          if (/^https?:\/\/(img|img4)\.nga/i.test(v) || /^\.?\/?mon_\d/i.test(v)) {
+            img.setAttribute('src', v);
+            break;
+          }
+        }
+      }
+      src = img.getAttribute('src');
       if (src) {
         // NGA 附件相对路径优先映射到附件站，其余走通用绝对化
         var att = ngaAttachmentUrl(src);
@@ -1404,6 +1417,25 @@
       setupInfiniteScroll(tid, title);
       DEBUG_STATS.phase = 'rendered:thread';
       showRoot();
+
+      // 主贴内容多、commonui 渲染慢于提取（图片常在提取后才填充）——3 秒后复检，
+      // 首楼内容显著增长则整体重绘一次；已开始翻页则放弃重绘避免吞掉追加页
+      var initPage = currentPage(location.href);
+      setTimeout(function () {
+        if (SCROLL.next !== initPage + 1) return;
+        var posts2 = extractPosts(document, location.href, (initPage - 1) * PAGE_SIZE);
+        if (posts2.length && (posts2[0].html || '').length > (posts[0].html || '').length + 50) {
+          var bx = document.getElementById('ngaw-msgs');
+          if (bx) {
+            bx.innerHTML = '';
+            lastDayKey = '';
+            SCROLL.seen = {};
+            posts2.forEach(function (p) { if (p.floor > 0) SCROLL.seen[p.floor] = 1; });
+            appendMessages(posts2, SELF_NAME);
+            appendSentinel();
+          }
+        }
+      }, 3000);
     });
 
     // 侧栏：同版块主题列表
@@ -2000,6 +2032,23 @@
             out.quoteClasses = null;
           }
         } catch (e) { out.quoteHtml = 'ERR'; }
+        // 主贴样本：首楼 postcontent 原始 HTML 与首楼所有图片的完整属性表
+        //（图片丢失排查：看图片到底在不在 postcontent、用什么懒加载属性）
+        try {
+          var fp = document.querySelector('#m_posts [id^="postcontent"]');
+          if (fp) {
+            out.firstPostHtml = String(fp.innerHTML || '').replace(/\s+/g, ' ').slice(0, 3500);
+            var rowImgs = fp.querySelectorAll('img');
+            out.firstPostImgAttrs = Array.prototype.slice.call(rowImgs, 0, 5).map(function (im) {
+              var list = [];
+              Array.prototype.forEach.call(im.attributes, function (at) { list.push(at.name + '=' + String(at.value).slice(0, 120)); });
+              return list;
+            });
+            out.firstPostImgCount = rowImgs.length;
+          } else {
+            out.firstPostHtml = null;
+          }
+        } catch (e) { out.firstPostHtml = 'ERR'; }
         if (window.console) {
           console.log('[nga-wecom] probe：selectors=候选选择器命中数，structure=容器前 8 个子元素签名');
           console.log(JSON.stringify(out, null, 2));
