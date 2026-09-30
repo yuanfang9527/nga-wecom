@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.1
+// @version      0.1.2
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,11 +35,12 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.1';
+  var VERSION = '0.1.2';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
   var WAIT_TIMEOUT = 10000;     // 等待 NGA 客户端渲染的超时（ms）
+  var PAGE_SIZE = 20;           // NGA 帖子每页楼层数（v0.1.2 probe 实测）
 
   // 企微风格 favicon（蓝色圆角方块 + 白色气泡）
   var FAVICON_DATAURI =
@@ -261,18 +262,18 @@
   // ---- 楼层提取（read.php，同时用于无限滚动拉取的下一页）----
 
   var POST_ROW_CANDIDATES = [
-    '#m_posts [id^="postcontentandsubject"] [id^="postcontent"]',
-    '#m_posts.c [id^="postcontentandsubject"] [id^="postcontent"]',
+    '#m_posts [id^="postcontentandsubject"] [id^="postcontent"]', // v0.1.2 probe 实测命中（20/页）
     '#m_posts [id^="postcontent"]',
-    '#m_posts.c [id^="postcontent"]',
+    '[id^="postcontentandsubject"] [id^="postcontent"]',
     '[id^="postcontentandsubject"]'
   ];
 
+  // v0.1.2 probe 实测：作者链接带 uid 参数（33 命中），username 参数不存在（0 命中）
   var AUTHOR_LINK_CANDIDATES = [
-    'a[href*="nuke.php?func=ucp&username"]',
     'a[href*="nuke.php?func=ucp&uid"]',
     '[id^="posterinfo"] a',
-    '.posterinfo a'
+    '.posterinfo a',
+    'a[href*="nuke.php?func=ucp&username"]'
   ];
 
   var TIME_RE = /(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T]*(\d{1,2}):(\d{2})/;
@@ -287,22 +288,28 @@
     return isNaN(ts) ? 0 : ts;
   }
 
-  // 找到内容节点所属的“楼层行”（向上爬到 m_posts 直系子节点为止）
-  function postRowOf(el) {
-    var cur = el;
-    var wrap = el.closest ? (el.closest('#m_posts') || document.body) : null;
-    while (cur && cur !== wrap) {
-      var parent = cur.parentElement;
-      if (parent && (parent.id === 'm_posts' || (/^m_posts/.test(parent.id || '') && parent.classList.contains('c')))) {
-        return cur;
-      }
-      cur = parent;
+  // 找到内容节点所属的“楼层行”：从 postcontentandsubject 包装块向上爬，
+  // 直到父节点包含多个楼层（说明当前节点已是本楼完整块）或到达 #m_posts 容器。
+  // 实测结构（v0.1.2 probe）：#m_posts > #m_posts_c.w100 > … > 楼层块 > postcontentandsubjectN > postcontentN
+  // 注意楼层块的直接父节点是 #m_posts_c 而非 #m_posts，不能按“父节点是 m_posts”判断。
+  function postRowOf(contentEl) {
+    var marker = contentEl.closest('[id^="postcontentandsubject"]') || contentEl;
+    var own = marker.querySelectorAll('[id^="postcontent"]').length || 1;
+    var cur = marker;
+    var guard = 0;
+    while (cur && cur.parentElement && guard++ < 15) {
+      var p = cur.parentElement;
+      var pid = p.id || '';
+      if (pid === 'm_posts' || pid === 'm_posts_c' || /^m_posts/.test(pid)) break;
+      if (p.querySelectorAll('[id^="postcontent"]').length > own) break;
+      cur = p;
     }
-    return el.closest ? (el.closest('table') || el.parentElement) : el.parentElement;
+    return cur;
   }
 
   // 提取楼层 -> [{ key, author, avatarUrl, floor, ts, subject, html }]
-  function extractPosts(root, baseUrl) {
+  // pageBase：楼层号兜底基数（(页码-1)*PAGE_SIZE），保证跨页楼层号全局唯一可去重
+  function extractPosts(root, baseUrl, pageBase) {
     var contents = qAll(root, POST_ROW_CANDIDATES);
     var posts = [];
     var seq = 0;
@@ -314,12 +321,17 @@
       var row = postRowOf(contentEl) || contentEl.parentElement;
       var rowText = row ? (row.textContent || '') : '';
 
-      // 作者
-      var authorLink = null;
-      for (var i = 0; i < AUTHOR_LINK_CANDIDATES.length && !authorLink; i++) {
-        try { authorLink = row.querySelector(AUTHOR_LINK_CANDIDATES[i]); } catch (e) { authorLink = null; }
+      // 作者：候选列表逐组取，链接组内挑第一个文本合法的（头像链接文本为空、操作链接是数字，都要跳过）
+      var author = '';
+      var authorLinks = [];
+      for (var i = 0; i < AUTHOR_LINK_CANDIDATES.length && !authorLinks.length; i++) {
+        try { authorLinks = Array.prototype.slice.call(row.querySelectorAll(AUTHOR_LINK_CANDIDATES[i])); } catch (e) { authorLinks = []; }
+        if (authorLinks.length) statHit(AUTHOR_LINK_CANDIDATES[i]); else statMiss(AUTHOR_LINK_CANDIDATES[i]);
       }
-      var author = authorLink ? (authorLink.textContent || '').trim() : '';
+      for (var j = 0; j < authorLinks.length; j++) {
+        var t = (authorLinks[j].textContent || '').trim();
+        if (t && t.length <= 20 && !/^[\d\s]+$/.test(t)) { author = t; break; }
+      }
       if (!author) author = /匿名|Anonymous/i.test(rowText) ? '匿名' : '坛友';
 
       // 真实头像（未开启伪装时用）
@@ -327,9 +339,9 @@
       try { avatarImg = row.querySelector('[id^="posterinfo"] img, .posterinfo img, td > a > img'); } catch (e) { avatarImg = null; }
       var avatarUrl = avatarImg && /^https?:/.test(avatarImg.getAttribute('src') || '') ? avatarImg.getAttribute('src') : '';
 
-      // 楼层号
+      // 楼层号：页面标记优先（"N楼"），缺失时按页基数+序号推算
       var floorMatch = FLOOR_RE.exec(rowText);
-      var floor = floorMatch ? parseInt(floorMatch[1], 10) : ++seq;
+      var floor = floorMatch ? parseInt(floorMatch[1], 10) : (pageBase || 0) + (++seq);
 
       // 标题（仅主楼通常带 postsubject）
       var subject = '';
@@ -820,11 +832,15 @@
   // 7. 行为层
   // ====================================================================
 
-  function routeOf(win) {
-    var p = win.location.pathname;
-    var s = win.location.search;
-    if (/read\.php/.test(p) || /read\.php/.test(s)) return 'thread';
+  // 页面路由：入参为 location 对象（注意不是 window——Location 上没有 .location，
+  // v0.1.1 误用导致 boot 与 debug 双双抛异常，皮肤从未激活）
+  // 判定顺序必须 board 在前："thread.php" 包含子串 "read.php"（th+read.php），
+  // 先判 read.php 会把所有版块页误判成帖子页
+  function routeOf(loc) {
+    var p = loc.pathname || '';
+    var s = loc.search || '';
     if (/thread\.php|forumdisplay/.test(p + s)) return 'board';
+    if (/read\.php/.test(p) || /read\.php/.test(s)) return 'thread';
     return 'home';
   }
 
@@ -863,7 +879,7 @@
     waitFor('#m_posts', WAIT_TIMEOUT / 2).then(function () {
       return waitFor('#m_posts [id^="postcontent"]', WAIT_TIMEOUT);
     }).then(function () {
-      var posts = extractPosts(document, location.href);
+      var posts = extractPosts(document, location.href, (currentPage(location.href) - 1) * PAGE_SIZE);
       if (!posts.length) {
         DEBUG_STATS.phase = 'empty:thread';
         renderEmptyMain(ICONS.chat, '没有解析到楼层', 'F12 运行 NGAWECOM.debug() 查看选择器命中情况');
@@ -938,7 +954,7 @@
     if (tip) tip.textContent = '正在加载…';
 
     fetchAndParse(url).then(function (doc) {
-      var posts = extractPosts(doc, location.origin + '/');
+      var posts = extractPosts(doc, location.origin + '/', (SCROLL.next - 1) * PAGE_SIZE);
       var fresh = posts.filter(function (p) {
         if (p.floor > 0 && SCROLL.seen[p.floor]) return false;
         if (p.floor > 0) SCROLL.seen[p.floor] = 1;
@@ -962,7 +978,8 @@
 
   function initBoardPage() {
     var board = extractBoardInfo(document) || { fid: parseQueryParam(location.search, 'fid'), name: '版块' };
-    waitFor('#m_threads', WAIT_TIMEOUT).then(function () {
+    // 版块页容器 id 未经实测（read.php 上为 null），等待条件放宽为主题链接出现即可
+    waitFor('#m_threads, a[href*="read.php?tid="]', WAIT_TIMEOUT).then(function () {
       var threads = extractThreadRows(document, location.href);
       renderSessionList(threads, 0, board.name);
       DEBUG_STATS.phase = threads.length ? 'rendered:board' : 'empty:board';
@@ -1178,6 +1195,7 @@
     buildPageUrl: buildPageUrl,
     clamp: clamp,
     isGuestWallText: isGuestWallText,
+    routeOf: routeOf,
     parseTimeText: parseTimeText,
     cleanPageTitle: cleanPageTitle
   };
@@ -1212,6 +1230,9 @@
       return;
     }
 
+    // v0.1.2 修复：happy path 此前从不调用伪装（标题/favicon/隐藏原生页都不会生效）
+    applyDisguise(true);
+
     var route = routeOf(location);
     DEBUG_STATS.phase = 'route:' + route;
     if (route === 'thread') initThreadPage();
@@ -1230,7 +1251,7 @@
       return s;
     }
 
-    var PROBE_TARGETS = ['#m_posts', '#m_threads', '#m_nav', '#mainmenu', '#m_top', '#m_ct', 'body'];
+    var PROBE_TARGETS = ['#m_posts', '#m_posts_c', '#m_threads', '#m_nav', '#mainmenu', '#m_top', '#m_ct', 'body'];
 
     window.NGAWECOM = {
       version: VERSION,

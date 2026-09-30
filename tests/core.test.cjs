@@ -137,6 +137,15 @@ test('clamp: 边界约束（灯箱缩放用）', () => {
   assert.strictEqual(m.clamp(9, 0.25, 5), 5);
 });
 
+// ---------- routeOf ----------
+
+test('routeOf: 按 pathname/search 判定页面类型（v0.1.2 修复入参为 location 对象）', () => {
+  assert.strictEqual(m.routeOf({ pathname: '/read.php', search: '?tid=123&page=2' }), 'thread');
+  assert.strictEqual(m.routeOf({ pathname: '/thread.php', search: '?fid=200' }), 'board');
+  assert.strictEqual(m.routeOf({ pathname: '/index.php', search: '' }), 'home');
+  assert.strictEqual(m.routeOf({ pathname: '/', search: '' }), 'home');
+});
+
 // ---------- isGuestWallText ----------
 
 test('isGuestWallText: 只认精确登录墙标志', () => {
