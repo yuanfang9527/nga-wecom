@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.2.5
+// @version      0.2.6
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.2.5';
+  var VERSION = '0.2.6';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -232,6 +232,15 @@
     if (/^(https?:|data:|#|javascript:)/i.test(u)) return u;
     if (u.indexOf('//') === 0) return 'https:' + u;
     try { return new URL(u, base || 'https://bbs.nga.cn/').href; } catch (e) { return u; }
+  }
+
+  // NGA 附件相对路径（./mon_202407/16/xxx.png）实际指向附件站而非当前域名，
+  // 通用绝对化会错误解析到 bbs.nga.cn/mon_... 导致主贴附件图全部丢失
+  // （主贴内容多、commonui 渲染最慢，常在原始 BBCode 阶段被提取走自渲染管线）
+  function ngaAttachmentUrl(src) {
+    var m = /^(\.\/)?(mon_\d{4,6}\/[^\s?#]+)/.exec(String(src == null ? '' : src).trim());
+    if (!m) return '';
+    return 'https://img.nga.cn/attachments/' + m[2];
   }
 
   function parseQueryParam(url, key) {
@@ -514,7 +523,11 @@
       var lazy = img.getAttribute('data-src') || img.getAttribute('data-original') || img.getAttribute('data-echo');
       if (lazy) img.setAttribute('src', lazy);
       var src = img.getAttribute('src');
-      if (src) img.setAttribute('src', absolutize(src, baseUrl));
+      if (src) {
+        // NGA 附件相对路径优先映射到附件站，其余走通用绝对化
+        var att = ngaAttachmentUrl(src);
+        img.setAttribute('src', att || absolutize(src, baseUrl));
+      }
       img.removeAttribute('width');
       img.removeAttribute('height');
       img.removeAttribute('onclick');
@@ -1784,6 +1797,7 @@
     escapeHtml: escapeHtml,
     truncate: truncate,
     absolutize: absolutize,
+    ngaAttachmentUrl: ngaAttachmentUrl,
     parseQueryParam: parseQueryParam,
     currentPage: currentPage,
     buildPageUrl: buildPageUrl,

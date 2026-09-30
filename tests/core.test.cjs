@@ -114,6 +114,21 @@ test('absolutize: 相对路径基于当前页解析', () => {
   );
 });
 
+test('ngaAttachmentUrl: NGA 附件相对路径映射到附件站（修主贴图片丢失）', () => {
+  assert.strictEqual(
+    m.ngaAttachmentUrl('./mon_202407/16/-4bwdQ19-8k1mZ18T3cSg2-fn.png'),
+    'https://img.nga.cn/attachments/mon_202407/16/-4bwdQ19-8k1mZ18T3cSg2-fn.png'
+  );
+  assert.strictEqual(
+    m.ngaAttachmentUrl('mon_202407/16/a.jpg'),
+    'https://img.nga.cn/attachments/mon_202407/16/a.jpg'
+  );
+  // 非附件路径原样返回空串，交给通用绝对化
+  assert.strictEqual(m.ngaAttachmentUrl('https://img.nga.cn/attachments/mon_202407/a.png'), '');
+  assert.strictEqual(m.ngaAttachmentUrl('./foo/bar.png'), '');
+  assert.strictEqual(m.ngaAttachmentUrl(''), '');
+});
+
 test('absolutize: 绝对/data/协议相对 URL 原样通过', () => {
   assert.strictEqual(m.absolutize('https://img.nga.178.com/a.png', 'https://bbs.nga.cn/x'), 'https://img.nga.178.com/a.png');
   assert.strictEqual(m.absolutize('data:image/png;base64,xxx', 'https://bbs.nga.cn/'), 'data:image/png;base64,xxx');
