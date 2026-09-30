@@ -148,11 +148,15 @@ test('routeOf: 按 pathname/search 判定页面类型（v0.1.2 修复入参为 l
 
 // ---------- isBadThreadLinkText ----------
 
-test('isBadThreadLinkText: 过滤翻页与纯数字页码链接', () => {
+test('isBadThreadLinkText: 过滤翻页/页码/时间戳链接', () => {
   assert.strictEqual(m.isBadThreadLinkText('2'), true);
   assert.strictEqual(m.isBadThreadLinkText('12'), true);
   assert.strictEqual(m.isBadThreadLinkText('下一页'), true);
   assert.strictEqual(m.isBadThreadLinkText('...'), true);
+  assert.strictEqual(m.isBadThreadLinkText('2026-09-30 15:56'), true); // "最后回复"时间戳
+  assert.strictEqual(m.isBadThreadLinkText('2026-09-30'), true);
+  assert.strictEqual(m.isBadThreadLinkText('15:56'), true);
+  assert.strictEqual(m.isBadThreadLinkText('最后回复'), true);
   assert.strictEqual(m.isBadThreadLinkText('【讨论】正常的主题标题'), false);
   assert.strictEqual(m.isBadThreadLinkText(''), true);
 });

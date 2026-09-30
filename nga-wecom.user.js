@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.9
+// @version      0.1.10
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.9';
+  var VERSION = '0.1.10';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -510,7 +510,12 @@
 
   function isBadThreadLinkText(text) {
     var t = String(text == null ? '' : text).trim();
-    return !t || BAD_LINK_TEXT.test(t);
+    if (!t || BAD_LINK_TEXT.test(t)) return true;
+    // 时间戳类文本（"最后回复"列链接）永远不作为标题——宁缺毋错
+    if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}([ T]\d{1,2}:\d{2}(:\d{2})?)?$/.test(t)) return true;
+    if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(t)) return true;
+    if (/^最后回复|^最后发表/.test(t)) return true;
+    return false;
   }
 
   // 公告类行识别：NGA 公告行结构特殊（多条链接挤在展示行内），标题常错乱；
@@ -1580,6 +1585,21 @@
           });
         } catch (e) { }
         out.fidLinkSamples = fidSamples;
+        // 主题提取结果样本：前 5 条（看我们把什么当成了标题）
+        try {
+          out.threadExtractSamples = extractThreadRows(document, location.href).slice(0, 5)
+            .map(function (t) { return { tid: t.tid, title: t.title, author: t.author, replies: t.replies, ts: t.ts }; });
+        } catch (e) { out.threadExtractSamples = 'ERR'; }
+        // 首个主题行的原始 HTML（截断 2000 字符）：真实结构一锤定音
+        try {
+          var sampleLink = document.querySelector('#m_threads a[href*="read.php?tid="]');
+          if (sampleLink) {
+            var rowEl = threadRowOf(sampleLink) || sampleLink.parentElement;
+            out.threadRowHtml = String(rowEl.outerHTML || '').replace(/\s+/g, ' ').slice(0, 2000);
+          } else {
+            out.threadRowHtml = null;
+          }
+        } catch (e) { out.threadRowHtml = 'ERR'; }
         if (window.console) {
           console.log('[nga-wecom] probe：selectors=候选选择器命中数，structure=容器前 8 个子元素签名');
           console.log(JSON.stringify(out, null, 2));
