@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.2.2
+// @version      0.2.3
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.2.2';
+  var VERSION = '0.2.3';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -304,7 +304,18 @@
       s = s.replace(reQuote, '<div class="ngaw-quote">$1</div>');
     }
 
-    // 引用头元数据：[pid=...]Reply[/pid]、[uid=...]name[/uid]
+    // 引用头统一（与 NGA 自渲染归一后的头部同协议：[原帖徽章] 作者 (时间)）：
+    // [pid=..]Reply[/pid] [b]Post by [uid=..]name[/uid] (time):[/b] 整体替换，
+    // 消除两管线头部格式差异（Reply 链接/英文 Post by/结尾冒号）
+    s = s.replace(
+      /\[pid=(\d+)(?:,[^\]]*)?\]\s*([^\[]*)\s*\[\/pid\]\s*\[b\]\s*Post\s*by\s*\[uid=(\d+)\]([^\[]*)\[\/uid\]\s*\(([^)]*)\)\s*:?\s*\[\/b\]/gi,
+      function (all, pid, label, uid, name, time) {
+        return '<a class="ngaw-quote-src" href="/read.php?pid=' + pid + '">原帖</a>' +
+          ' <a class="ngaw-quote-user" href="/nuke.php?func=ucp&amp;uid=' + uid + '">' + name + '</a>' +
+          ' <span class="ngaw-qtime">(' + time + ')</span>';
+      });
+
+    // 引用头元数据散件兜底：单独出现的 [pid=...]、[uid=...]
     s = s.replace(/\[pid=(\d+)(?:,[^\]]*)?\]([^\[]*)\[\/pid\]/gi,
       '<a href="/read.php?pid=$1">$2</a>');
     s = s.replace(/\[uid=(\d+)\]([^\[]*)\[\/uid\]/gi,
@@ -453,13 +464,28 @@
       var qdiv = document.createElement('div');
       qdiv.className = 'ngaw-quote';
       while (qn.firstChild) qdiv.appendChild(qn.firstChild);
-      // 头部精修：删 R 死链；'+' 跳原帖链接做小徽章；作者链接加粗
+      // 头部精修（与 renderBbcode 统一协议：[原帖徽章] 作者 (时间)）：
+      // 删 R 死链与孤立 " by " 文本；'+' 链接改文案为'原帖'；作者链接去方括号加粗；时间灰化
       Array.prototype.forEach.call(qdiv.querySelectorAll('a'), function (a) {
         var href = a.getAttribute('href') || '';
         var title = a.getAttribute('title') || '';
         if (/^javascript:/i.test(href)) { a.remove(); return; }
-        if (title === '打开链接' || /#pid.+Anchor/.test(href)) a.classList.add('ngaw-quote-src');
-        else if (href.indexOf('nuke.php?func=ucp') >= 0) a.classList.add('ngaw-quote-user');
+        if (title === '打开链接' || /#pid.+Anchor/.test(href)) {
+          a.classList.add('ngaw-quote-src');
+          a.textContent = '原帖';
+        } else if (href.indexOf('nuke.php?func=ucp') >= 0) {
+          a.classList.add('ngaw-quote-user');
+          a.textContent = String(a.textContent || '').replace(/^\[+|\]+$/g, '').trim();
+        }
+      });
+      Array.prototype.forEach.call(qdiv.childNodes, function (n) {
+        if (n.nodeType === 3 && /^\s*by\s*$/.test(n.nodeValue || '')) n.nodeValue = ' ';
+      });
+      Array.prototype.forEach.call(qdiv.querySelectorAll('span'), function (sp) {
+        if (/(^|\s)(silver|xtxt)(\s|$)/.test(String(sp.getAttribute('class') || '')) &&
+          /\(\d{2,4}[-/]\d/.test(sp.textContent || '')) {
+          sp.classList.add('ngaw-qtime');
+        }
       });
       qn.parentNode.replaceChild(qdiv, qn);
       qcs = quoteCandidates();
@@ -964,6 +990,7 @@
     '.ngaw-bubble .ngaw-quote .ngaw-quote,.ngaw-bubble blockquote blockquote{margin:4px 0}',
     '.ngaw-bubble .ngaw-quote .ngaw-quote-src{font-size:11px;color:var(--sub);border:1px solid var(--border);border-radius:4px;padding:0 4px;margin-right:4px;text-decoration:none}',
     '.ngaw-bubble .ngaw-quote .ngaw-quote-user{font-weight:600}',
+    '.ngaw-bubble .ngaw-quote .ngaw-qtime{color:var(--sub);font-size:12px}',
     '.ngaw-bubble .ngaw-code{background:var(--quote-bg);border-radius:6px;padding:8px 10px;font-family:Consolas,Menlo,monospace;font-size:12px;white-space:pre-wrap;margin:6px 0;overflow-x:auto}',
     '.ngaw-bubble .ngaw-emo{display:inline-block;padding:0 2px;font-size:15px;opacity:.85;cursor:default}',
     '.ngaw-bubble li{margin-left:18px}',
