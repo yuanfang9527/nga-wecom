@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.10
+// @version      0.1.11
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.10';
+  var VERSION = '0.1.11';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -515,7 +515,16 @@
     if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}([ T]\d{1,2}:\d{2}(:\d{2})?)?$/.test(t)) return true;
     if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(t)) return true;
     if (/^最后回复|^最后发表/.test(t)) return true;
+    // 链接文本本身是 URL（实测置顶区老帖的链接文本是绝对地址形态），非标题
+    if (/^https?:\/\//i.test(t)) return true;
     return false;
+  }
+
+  // 置顶/公告区判定：实测 #m_threads 开头是 #toptopics.forumbox（h3 行结构），
+  // 里面的链接文本是公告名或 URL，不是主题列表，整体排除
+  function isExcludedTopicArea(el) {
+    if (!el || !el.closest) return false;
+    return !!(el.closest('#toptopics') || el.closest('h3'));
   }
 
   // 公告类行识别：NGA 公告行结构特殊（多条链接挤在展示行内），标题常错乱；
@@ -555,6 +564,7 @@
     // 行内约 6 个 tid 链接（标题/页码/最后回复），DOM 序第一个未必是标题，标题文本必然最长
     var best = {};
     links.forEach(function (a) {
+      if (isExcludedTopicArea(a)) return; // 置顶/公告区（#toptopics h3 行）不进主题列表
       var title = cleanThreadTitle(a.textContent || '');
       if (!title || isBadThreadLinkText(title)) return;
       var href = a.getAttribute('href') || '';
@@ -1590,9 +1600,15 @@
           out.threadExtractSamples = extractThreadRows(document, location.href).slice(0, 5)
             .map(function (t) { return { tid: t.tid, title: t.title, author: t.author, replies: t.replies, ts: t.ts }; });
         } catch (e) { out.threadExtractSamples = 'ERR'; }
-        // 首个主题行的原始 HTML（截断 2000 字符）：真实结构一锤定音
+        // 首个真实主题行的原始 HTML（截断 2000 字符）：跳过置顶区，取真列表结构
         try {
-          var sampleLink = document.querySelector('#m_threads a[href*="read.php?tid="]');
+          var candLinks = Array.prototype.slice.call(document.querySelectorAll('#m_threads a[href*="read.php?tid="]'));
+          var sampleLink = null;
+          for (var ci = 0; ci < candLinks.length; ci++) {
+            if (isExcludedTopicArea(candLinks[ci])) continue;
+            sampleLink = candLinks[ci];
+            break;
+          }
           if (sampleLink) {
             var rowEl = threadRowOf(sampleLink) || sampleLink.parentElement;
             out.threadRowHtml = String(rowEl.outerHTML || '').replace(/\s+/g, ' ').slice(0, 2000);

@@ -157,6 +157,7 @@ test('isBadThreadLinkText: 过滤翻页/页码/时间戳链接', () => {
   assert.strictEqual(m.isBadThreadLinkText('2026-09-30'), true);
   assert.strictEqual(m.isBadThreadLinkText('15:56'), true);
   assert.strictEqual(m.isBadThreadLinkText('最后回复'), true);
+  assert.strictEqual(m.isBadThreadLinkText('https://bbs.nga.cn/read.php?tid=7436149 …'), true); // 置顶区 URL 文本（实测样本）
   assert.strictEqual(m.isBadThreadLinkText('【讨论】正常的主题标题'), false);
   assert.strictEqual(m.isBadThreadLinkText(''), true);
 });
