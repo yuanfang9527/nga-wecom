@@ -210,7 +210,7 @@ test('looksLikeBbcode: 识别原始 BBCode', () => {
 
 test('renderBbcode: 引用头元数据转为链接（用户实测样例）', () => {
   const out = m.renderBbcode('[quote][pid=883366224,47641935,2]Reply[/pid] [b]Post by [uid=346237]rinoa360[/uid] (2026-09-30 15:56):[/b]\n黄果居然有iPhone的版本[/quote]');
-  assert.ok(out.includes('class="quote"'), '应有引用块');
+  assert.ok(out.includes('class="ngaw-quote"'), '应有引用块');
   assert.ok(out.includes('href="/read.php?pid=883366224"'), 'pid 应转原帖链接');
   assert.ok(out.includes('href="/nuke.php?func=ucp&amp;uid=346237"'), 'uid 应转用户链接');
   assert.ok(out.includes('<strong>Post by'), '粗体生效');
@@ -220,7 +220,7 @@ test('renderBbcode: 引用头元数据转为链接（用户实测样例）', () 
 
 test('renderBbcode: 嵌套 quote 逐层展开', () => {
   const out = m.renderBbcode('[quote]外层[quote]内层[/quote]继续[/quote]');
-  assert.strictEqual(out.split('class="quote"').length - 1, 2);
+  assert.strictEqual(out.split('class="ngaw-quote"').length - 1, 2);
 });
 
 test('renderBbcode: 图片/链接/表情/代码块', () => {

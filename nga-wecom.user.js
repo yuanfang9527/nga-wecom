@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.17
+// @version      0.1.18
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.17';
+  var VERSION = '0.1.18';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -236,7 +236,7 @@
     var reQuote = /\[quote\]((?:(?!\[quote\])[\s\S])*?)\[\/quote\]/i;
     var guard = 0;
     while (reQuote.test(s) && guard++ < 24) {
-      s = s.replace(reQuote, '<div class="quote">$1</div>');
+      s = s.replace(reQuote, '<div class="ngaw-quote">$1</div>');
     }
 
     // 引用头元数据：[pid=...]Reply[/pid]、[uid=...]name[/uid]
@@ -369,6 +369,22 @@
         else if (n === 'class' && attr.value.length > 120) el.removeAttribute('class'); // commonui 内部样式类过长无意义
       });
     });
+
+    // 引用块归一：NGA 自渲染的 span.quote 等会被 NGA 全局 .quote 样式波及，
+    // 与 renderBbcode 产物（滚动加载页）样式不一致——统一改写为 div.ngaw-quote，
+    // 脱离 NGA 样式作用域，两个来源走同一条 CSS（外层先改写，内层随后续查询继续处理）
+    var guardQ = 0;
+    var quotes;
+    try { quotes = frag.querySelectorAll('.quote, blockquote'); } catch (e) { quotes = []; }
+    while (quotes.length && guardQ++ < 50) {
+      var qn = quotes[0];
+      if (!qn.parentNode) break;
+      var qdiv = document.createElement('div');
+      qdiv.className = 'ngaw-quote';
+      while (qn.firstChild) qdiv.appendChild(qn.firstChild);
+      qn.parentNode.replaceChild(qdiv, qn);
+      try { quotes = frag.querySelectorAll('.quote, blockquote'); } catch (e) { quotes = []; }
+    }
 
     var imgs = frag.querySelectorAll('img');
     Array.prototype.forEach.call(imgs, function (img) {
@@ -828,8 +844,8 @@
     '.ngaw-bubble img.ngaw-img{max-width:min(420px,100%);max-height:400px;border-radius:6px;display:inline-block;margin:4px 0;cursor:zoom-in;vertical-align:middle}',
     '.ngaw-bubble a{color:#0082ef;text-decoration:none}',
     '.ngaw-bubble a:hover{text-decoration:underline}',
-    '.ngaw-bubble .quote,.ngaw-bubble blockquote{border-left:3px solid #cfcfcf;background:var(--quote-bg);color:var(--quote-fg);padding:6px 10px;margin:6px 0;border-radius:4px;font-size:13px}',
-    '.ngaw-bubble .quote .quote,.ngaw-bubble blockquote blockquote{margin:4px 0}',
+    '.ngaw-bubble .ngaw-quote,.ngaw-bubble blockquote{border-left:3px solid #cfcfcf;background:var(--quote-bg);color:var(--quote-fg);padding:6px 10px;margin:6px 0;border-radius:4px;font-size:13px;display:block}',
+    '.ngaw-bubble .ngaw-quote .ngaw-quote,.ngaw-bubble blockquote blockquote{margin:4px 0}',
     '.ngaw-bubble .ngaw-code{background:var(--quote-bg);border-radius:6px;padding:8px 10px;font-family:Consolas,Menlo,monospace;font-size:12px;white-space:pre-wrap;margin:6px 0;overflow-x:auto}',
     '.ngaw-bubble .ngaw-emo{display:inline-block;padding:0 2px;font-size:15px;opacity:.85;cursor:default}',
     '.ngaw-bubble li{margin-left:18px}',
