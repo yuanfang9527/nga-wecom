@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.14
+// @version      0.1.15
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.14';
+  var VERSION = '0.1.15';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -103,15 +103,37 @@
     return 'hsl(' + (h % 360) + ',58%,52%)';
   }
 
-  // 会话列表头像：按名称哈希确定性取 randomuser.me 静态人像
-  // （仅 URL 种子，不携带任何账号信息；加载失败由 onerror 回落首字符）
-  function networkAvatarUrl(seed) {
+  // 帖子条目头像：DiceBear identicon 风格本地生成（5x5 镜像色块 SVG -> data URI），
+  // 种子哈希 + mulberry32 伪随机数，纯函数可测，零第三方请求
+  function diceBearIdenticon(seed) {
     var h = 0;
     var s = String(seed == null ? '' : seed);
     for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-    var gender = h % 2 ? 'women' : 'men';
-    var idx = Math.floor(h / 2) % 100;
-    return 'https://randomuser.me/api/portraits/' + gender + '/' + idx + '.jpg';
+    var a = (h || 1) >>> 0;
+    function rnd() {
+      a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+    var hue = Math.floor(rnd() * 360);
+    var bg = 'hsl(' + hue + ',45%,92%)';
+    var fg = 'hsl(' + hue + ',60%,42%)';
+    var cell = 20; // 100 / 5
+    var cells = '';
+    for (var x = 0; x < 3; x++) {
+      for (var y = 0; y < 5; y++) {
+        if (rnd() < 0.5) {
+          cells += '<rect x="' + (x * cell) + '" y="' + (y * cell) + '" width="' + cell + '" height="' + cell + '" fill="' + fg + '"/>';
+          if (x < 2) { // 左 3 列镜像到右侧，保持对称
+            cells += '<rect x="' + ((4 - x) * cell) + '" y="' + (y * cell) + '" width="' + cell + '" height="' + cell + '" fill="' + fg + '"/>';
+          }
+        }
+      }
+    }
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" shape-rendering="crispEdges">' +
+      '<rect width="100" height="100" fill="' + bg + '"/>' + cells + '</svg>';
+    return 'data:image/svg+xml,' + encodeURIComponent(svg);
   }
 
   // NGA 真实版块图标（用户实测样本：img4.nga.cn/proxy/cache_attach/ficon/{fid}u.png，
@@ -998,12 +1020,12 @@
     return d;
   }
 
-  // 会话列表专用：版块用 NGA 真实图标（overrideUrl），帖子用网络人像；失败均回落首字符
+  // 会话列表专用：版块用 NGA 真实图标（overrideUrl），帖子用本地 DiceBear identicon；失败均回落首字符
   function sessionAvatarEl(name, overrideUrl) {
     var d = h('div', 'ngaw-avatar');
     var img = document.createElement('img');
     img.alt = '';
-    img.src = overrideUrl || networkAvatarUrl(name);
+    img.src = overrideUrl || diceBearIdenticon(name);
     img.onerror = function () {
       d.innerHTML = '';
       d.textContent = firstChar(name);
@@ -1524,7 +1546,7 @@
     relTime: relTime,
     dayLabel: dayLabel,
     hashColor: hashColor,
-    networkAvatarUrl: networkAvatarUrl,
+    diceBearIdenticon: diceBearIdenticon,
     ngaBoardIconUrl: ngaBoardIconUrl,
     firstChar: firstChar,
     escapeHtml: escapeHtml,

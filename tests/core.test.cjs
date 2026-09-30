@@ -57,15 +57,13 @@ test('hashColor: 确定性且格式正确', () => {
   assert.ok(colors.size > 10, '配色应具有区分度');
 });
 
-test('networkAvatarUrl: 按名称确定性映射到 randomuser 静态人像', () => {
-  const u1 = m.networkAvatarUrl('梦殇慕雨');
-  assert.strictEqual(u1, m.networkAvatarUrl('梦殇慕雨'), '同名同头像');
-  assert.match(u1, /^https:\/\/randomuser\.me\/api\/portraits\/(men|women)\/\d{1,2}\.jpg$/);
-  // 覆盖男女两个分支都有产出
-  const set = new Set(Array.from({ length: 30 }, (_, i) => m.networkAvatarUrl('user' + i)));
-  let hasMen = false, hasWomen = false;
-  set.forEach(u => { u.includes('/men/') ? (hasMen = true) : (hasWomen = true); });
-  assert.ok(hasMen && hasWomen, '性别分支均可用');
+test('diceBearIdenticon: 本地 SVG data URI、确定性、零网络请求', () => {
+  const a = m.diceBearIdenticon('梦殇慕雨');
+  assert.strictEqual(a, m.diceBearIdenticon('梦殇慕雨'), '同名同头像');
+  assert.ok(a.startsWith('data:image/svg+xml,'), '应为 data URI 而非网络地址');
+  assert.ok(!/^https?:/.test(a), '不得发起第三方请求');
+  const set = new Set(Array.from({ length: 40 }, (_, i) => m.diceBearIdenticon('user' + i)));
+  assert.ok(set.size > 30, '不同种子应产生不同头像');
 });
 
 test('firstChar: 取首字符，空值兜底', () => {
