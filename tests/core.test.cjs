@@ -157,6 +157,23 @@ test('isBadThreadLinkText: 过滤翻页与纯数字页码链接', () => {
   assert.strictEqual(m.isBadThreadLinkText(''), true);
 });
 
+// ---------- decodeHtmlBuffer ----------
+
+test('decodeHtmlBuffer: GB 字节按 GB18030 解码（NGA 响应无 charset 头）', () => {
+  // '张' 的 GBK/GB18030 编码为 0xD5 0xC5
+  const gbk = Buffer.from([0xd5, 0xc5]);
+  assert.strictEqual(m.decodeHtmlBuffer(gbk), '张');
+});
+
+test('decodeHtmlBuffer: meta 声明 utf-8 时按 utf-8 解码', () => {
+  // '你' 的 UTF-8 编码为 0xE4 0xBD 0xA0
+  const utf8 = Buffer.concat([
+    Buffer.from('<meta charset="utf-8">'),
+    Buffer.from([0xe4, 0xbd, 0xa0])
+  ]);
+  assert.strictEqual(m.decodeHtmlBuffer(utf8), '<meta charset="utf-8">你');
+});
+
 // ---------- isGuestWallText ----------
 
 test('isGuestWallText: 只认精确登录墙标志', () => {

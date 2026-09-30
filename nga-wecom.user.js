@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.3
+// @version      0.1.4
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.3';
+  var VERSION = '0.1.4';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -156,6 +156,18 @@
   }
 
   function clamp(x, lo, hi) { return Math.min(hi, Math.max(lo, x)); }
+
+  // NGA 响应头不带 charset（GB18030 系编码），fetch().text() 会按 UTF-8 误解码产生乱码
+  //（侧栏主题标题、无限滚动追加页都来自 fetch 解析）。先按字节嗅探 <meta charset>，
+  // 未声明或 GB 系一律按 GB18030（兼容 GB2312/GBK）解码。
+  function decodeHtmlBuffer(buf) {
+    var head = '';
+    try { head = new TextDecoder('utf-8').decode(new Uint8Array(buf).subarray(0, 2048)); } catch (e) { head = ''; }
+    var mm = /charset\s*=\s*["']?\s*([\w-]+)/i.exec(head);
+    var cs = (mm && mm[1] || '').toLowerCase();
+    if (cs === 'utf-8' || cs === 'utf8') return new TextDecoder('utf-8').decode(buf);
+    return new TextDecoder('gb18030').decode(buf);
+  }
 
   // 登录墙识别：只认精确标志（NGA 拦截页的标题与正文固定文案），
   // 不使用"请在登录后"这类泛化文案，避免误伤正常页面
@@ -888,9 +900,9 @@
   function fetchAndParse(url) {
     return fetch(url, { credentials: 'same-origin' }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.text();
-    }).then(function (html) {
-      return new DOMParser().parseFromString(html, 'text/html');
+      return r.arrayBuffer();
+    }).then(function (buf) {
+      return new DOMParser().parseFromString(decodeHtmlBuffer(buf), 'text/html');
     });
   }
 
@@ -1159,11 +1171,24 @@
 
   var ORIG_TITLE = null;
   var ORIG_FAVICON = null;
+  var TITLE_GUARD = null;
+
+  // NGA 自己的脚本会在晚于 boot 的时机改写 document.title（实测 pageTitle 被还原为
+  // "xxx NGA玩家社区 P3"），低频守护持续再断言伪装标题
+  function startTitleGuard() {
+    if (TITLE_GUARD) return;
+    TITLE_GUARD = setInterval(function () {
+      if (SETTINGS && SETTINGS.enabled && document.title !== WECOM_TITLE) {
+        document.title = WECOM_TITLE;
+      }
+    }, 1000);
+  }
 
   function applyDisguise(on) {
     if (on) {
       if (ORIG_TITLE === null) ORIG_TITLE = document.title;
       document.title = WECOM_TITLE;
+      startTitleGuard();
       var link = document.querySelector("link[rel*='icon']");
       if (!link) {
         link = document.createElement('link');
@@ -1224,6 +1249,7 @@
     clamp: clamp,
     isGuestWallText: isGuestWallText,
     isBadThreadLinkText: isBadThreadLinkText,
+    decodeHtmlBuffer: decodeHtmlBuffer,
     routeOf: routeOf,
     parseTimeText: parseTimeText,
     cleanPageTitle: cleanPageTitle
