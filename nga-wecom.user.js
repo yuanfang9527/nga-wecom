@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.18
+// @version      0.2.0
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.18';
+  var VERSION = '0.2.0';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -140,6 +140,71 @@
   // fid 可为负，如 -152678=英雄联盟；?391 为缓存戳可省）
   function ngaBoardIconUrl(fid) {
     return 'https://img4.nga.cn/proxy/cache_attach/ficon/' + encodeURIComponent(String(fid)) + 'u.png';
+  }
+
+  // NGA 表情映射（字典来源：EVAyo/ngapost2md，URL 模板实测）
+  var NGA_EMO_BASE = 'https://img4.nga.cn/ngabbs/post/smile/';
+  var NGA_EMOTIONS = {
+    ac: {
+      'blink': 'ac0.png', 'goodjob': 'ac1.png', '上': 'ac2.png', '中枪': 'ac3.png', '偷笑': 'ac4.png',
+      '冷': 'ac5.png', '凌乱': 'ac6.png', '吓': 'ac8.png', '吻': 'ac9.png', '呆': 'ac10.png',
+      '咦': 'ac11.png', '哦': 'ac12.png', '哭': 'ac13.png', '哭1': 'ac14.png', '哭笑': 'ac15.png',
+      '喘': 'ac17.png', '心': 'ac23.png', '囧': 'ac21.png', '晕': 'ac33.png', '汗': 'ac34.png',
+      '瞎': 'ac35.png', '羞': 'ac36.png', '羡慕': 'ac37.png', '委屈': 'ac22.png', '忧伤': 'ac24.png',
+      '怒': 'ac25.png', '怕': 'ac26.png', '惊': 'ac27.png', '愁': 'ac28.png', '抓狂': 'ac29.png',
+      '哼': 'ac16.png', '喷': 'ac18.png', '嘲笑': 'ac19.png', '嘲笑1': 'ac20.png', '抠鼻': 'ac30.png',
+      '无语': 'ac32.png', '衰': 'ac40.png', '黑枪': 'ac44.png', '花痴': 'ac38.png', '闪光': 'ac43.png',
+      '擦汗': 'ac31.png', '茶': 'ac39.png', '计划通': 'ac41.png', '反对': 'ac7.png', '赞同': 'ac42.png'
+    },
+    a2: {
+      'goodjob': 'a2_02.png', '诶嘿': 'a2_05.png', '偷笑': 'a2_03.png', '怒': 'a2_04.png', '笑': 'a2_07.png',
+      '那个…': 'a2_08.png', '哦嗬嗬嗬': 'a2_09.png', '舔': 'a2_10.png', '鬼脸': 'a2_14.png', '冷': 'a2_16.png',
+      '大哭': 'a2_15.png', '哭': 'a2_17.png', '恨': 'a2_21.png', '中枪': 'a2_23.png', '囧': 'a2_24.png',
+      '你看看你': 'a2_25.png', 'doge': 'a2_27.png', '自戳双目': 'a2_28.png', '偷吃': 'a2_30.png', '冷笑': 'a2_31.png',
+      '壁咚': 'a2_32.png', '不活了': 'a2_33.png', '不明觉厉': 'a2_36.png', '是在下输了': 'a2_51.png', '你为猴这么': 'a2_53.png',
+      '干杯': 'a2_54.png', '干杯2': 'a2_55.png', '异议': 'a2_47.png', '认真': 'a2_48.png', '你已经死了': 'a2_45.png',
+      '你这种人…': 'a2_49.png', '妮可妮可妮': 'a2_18.png', '惊': 'a2_19.png', '抢镜头': 'a2_52.png', 'yes': 'a2_26.png',
+      '有何贵干': 'a2_11.png', '病娇': 'a2_12.png', 'lucky': 'a2_13.png', 'poi': 'a2_20.png', '囧2': 'a2_22.png',
+      '威吓': 'a2_42.png', 'jojo立': 'a2_37.png', 'jojo立2': 'a2_38.png', 'jojo立3': 'a2_39.png', 'jojo立4': 'a2_41.png',
+      'jojo立5': 'a2_40.png'
+    },
+    pst: {
+      '举手': 'pt00.png', '亲': 'pt01.png', '偷笑': 'pt02.png', '偷笑2': 'pt03.png', '偷笑3': 'pt04.png',
+      '傻眼': 'pt05.png', '傻眼2': 'pt06.png', '兔子': 'pt07.png', '发光': 'pt08.png', '呆': 'pt09.png',
+      '呆2': 'pt10.png', '呆3': 'pt11.png', '呕': 'pt12.png', '呵欠': 'pt13.png', '哭': 'pt14.png',
+      '哭2': 'pt15.png', '哭3': 'pt16.png', '嘲笑': 'pt17.png', '基': 'pt18.png', '宅': 'pt19.png',
+      '安慰': 'pt20.png', '幸福': 'pt21.png', '开心': 'pt22.png', '开心2': 'pt23.png', '开心3': 'pt24.png',
+      '怀疑': 'pt25.png', '怒': 'pt26.png', '怒2': 'pt27.png', '怨': 'pt28.png', '惊吓': 'pt29.png',
+      '惊吓2': 'pt30.png', '惊呆': 'pt31.png', '惊呆2': 'pt32.png', '惊呆3': 'pt33.png', '惨': 'pt34.png',
+      '斜眼': 'pt35.png', '晕': 'pt36.png', '汗': 'pt37.png', '泪': 'pt38.png', '泪2': 'pt39.png',
+      '泪3': 'pt40.png', '泪4': 'pt41.png', '满足': 'pt42.png', '满足2': 'pt43.png', '火星': 'pt44.png',
+      '牙疼': 'pt45.png', '电击': 'pt46.png', '看戏': 'pt47.png', '眼袋': 'pt48.png', '眼镜': 'pt49.png',
+      '笑而不语': 'pt50.png', '紧张': 'pt51.png', '美味': 'pt52.png', '背': 'pt53.png', '脸红': 'pt54.png',
+      '脸红2': 'pt55.png', '腐': 'pt56.png', '星星眼': 'pt57.png', '谢': 'pt58.png', '醉': 'pt59.png',
+      '闷': 'pt60.png', '闷2': 'pt61.png', '音乐': 'pt62.png', '黑脸': 'pt63.png', '鼻血': 'pt64.png'
+    },
+    dt: {
+      'ROLL': 'dt01.png', '上': 'dt02.png', '傲娇': 'dt03.png', '叉出去': 'dt04.png', '发光': 'dt05.png',
+      '呵欠': 'dt06.png', '哭': 'dt07.png', '啃古头': 'dt08.png', '嘲笑': 'dt09.png', '心': 'dt10.png',
+      '怒': 'dt11.png', '怒2': 'dt12.png', '怨': 'dt13.png', '惊': 'dt14.png', '惊2': 'dt15.png',
+      '无语': 'dt16.png', '星星眼': 'dt17.png', '星星眼2': 'dt18.png', '晕': 'dt19.png', '注意': 'dt20.png',
+      '注意2': 'dt21.png', '泪': 'dt22.png', '泪2': 'dt23.png', '烧': 'dt24.png', '笑': 'dt25.png',
+      '笑2': 'dt26.png', '笑3': 'dt27.png', '脸红': 'dt28.png', '药': 'dt29.png', '衰': 'dt30.png',
+      '鄙视': 'dt31.png', '闲': 'dt32.png', '黑脸': 'dt33.png'
+    },
+    pg: {
+      '战斗力': 'pg01.png', '哈啤': 'pg02.png', '满分': 'pg03.png', '衰': 'pg04.png', '拒绝': 'pg05.png',
+      '心': 'pg06.png', '严肃': 'pg07.png', '吃瓜': 'pg08.png', '嘣': 'pg09.png', '嘣2': 'pg10.png',
+      '冻': 'pg11.png', '谢': 'pg12.png', '哭': 'pg13.png', '响指': 'pg14.png', '转身': 'pg15.png'
+    }
+  };
+
+  // [s:类型:中文名] -> 表情图 URL；未知类型/名称返回空串（调用方回落占位符）
+  function ngaEmotionUrl(type, name) {
+    var table = NGA_EMOTIONS[String(type == null ? '' : type).toLowerCase()];
+    if (!table) return '';
+    var file = table[String(name == null ? '' : name)];
+    return file ? NGA_EMO_BASE + file : '';
   }
 
   function firstChar(name) {
@@ -281,8 +346,12 @@
     s = s.replace(/\[list\]([\s\S]*?)\[\/list\]/gi, '<ul>$1</ul>');
     s = s.replace(/\[\*\]/gi, '<li>');
 
-    // NGA 表情：无法可靠映射官方 CDN 图片，渲染为占位符（title 保留语义）
-    s = s.replace(/\[s:[^\]]*\]/gi, '<span class="ngaw-emo" title="NGA 表情">🙂</span>');
+    // NGA 表情：字典命中输出真实表情图，未知回落占位符
+    s = s.replace(/\[s:([a-z0-9]+):([^\]]*)\]/gi, function (all, type, name) {
+      var url = ngaEmotionUrl(type, name);
+      if (url) return '<img class="ngaw-emo-img" src="' + url + '" alt="' + type + ':' + name + '">';
+      return '<span class="ngaw-emo" title="NGA 表情">🙂</span>';
+    });
 
     // flash/video → 链接
     s = s.replace(/\[(?:flash|video)[^\]]*\]([^\[\s]+)\[\/(?:flash|video)\]/gi, '<a href="$1">[视频] $1</a>');
@@ -395,7 +464,9 @@
       img.removeAttribute('width');
       img.removeAttribute('height');
       img.removeAttribute('onclick');
-      img.classList.add('ngaw-img');
+      // NGA 自渲染的表情图与普通贴图区分：表情走行内小尺寸样式，不进灯箱
+      var isEmo = (img.getAttribute('src') || '').indexOf('/ngabbs/post/smile/') >= 0;
+      img.classList.add(isEmo ? 'ngaw-emo-img' : 'ngaw-img');
     });
 
     var links = frag.querySelectorAll('a');
@@ -782,6 +853,20 @@
     return max;
   }
 
+  // 版块页最大页码：只统计指向当前版块（fid）的分页链接
+  function boardMaxPageOf(doc, fid) {
+    var max = 1;
+    var links = [];
+    try { links = Array.prototype.slice.call(doc.querySelectorAll('a[href*="page="]')); } catch (e) { links = []; }
+    links.forEach(function (a) {
+      var h = a.getAttribute('href') || '';
+      if (h.indexOf('fid=' + fid) < 0) return;
+      var p = parseInt(parseQueryParam(h, 'page'), 10);
+      if (p > max && p <= 2000) max = p;
+    });
+    return max;
+  }
+
   // ====================================================================
   // 6. UI 壳层
   // ====================================================================
@@ -842,6 +927,7 @@
     '.ngaw-bubble p{margin:0 0 .5em}',
     '.ngaw-bubble p:last-child{margin-bottom:0}',
     '.ngaw-bubble img.ngaw-img{max-width:min(420px,100%);max-height:400px;border-radius:6px;display:inline-block;margin:4px 0;cursor:zoom-in;vertical-align:middle}',
+    '.ngaw-bubble img.ngaw-emo-img{height:1.7em;width:auto;max-width:none;vertical-align:-0.4em;display:inline-block;margin:0 1px;cursor:default}',
     '.ngaw-bubble a{color:#0082ef;text-decoration:none}',
     '.ngaw-bubble a:hover{text-decoration:underline}',
     '.ngaw-bubble .ngaw-quote,.ngaw-bubble blockquote{border-left:3px solid #cfcfcf;background:var(--quote-bg);color:var(--quote-fg);padding:6px 10px;margin:6px 0;border-radius:4px;font-size:13px;display:block}',
@@ -1322,7 +1408,71 @@
     });
   }
 
-  // ---- thread.php：版块页 -> 会话列表 ----
+  // ---- thread.php：版块页 -> 会话列表（含无限滚动翻页）----
+
+  var BSCROLL = { next: 2, max: 1, loading: false, lastFetch: 0, seen: {} };
+
+  function setupBoardScroll(board, firstThreads) {
+    var box = document.getElementById('ngaw-sessions');
+    if (!box) return;
+    BSCROLL.seen = {};
+    firstThreads.forEach(function (t) { BSCROLL.seen[t.tid] = 1; });
+    BSCROLL.max = boardMaxPageOf(document, board.fid);
+    BSCROLL.next = currentPage(location.href) + 1;
+    var sentinel = h('div', 'ngaw-loadtip ngaw-sentinel',
+      BSCROLL.next <= BSCROLL.max ? '下滑加载更多主题…' : '没有更多主题了');
+    sentinel.id = 'ngaw-board-sentinel';
+    box.appendChild(sentinel);
+    // 滚动监听（非 IntersectionObserver）：版块面板开关会重建 innerHTML，
+    // 挂在容器上的监听不随哨兵节点失效
+    box.addEventListener('scroll', function () {
+      if (BSCROLL.next > BSCROLL.max || BSCROLL.loading) return;
+      if (box.dataset.mode === 'boards') return;
+      if (box.scrollTop + box.clientHeight < box.scrollHeight - 300) return;
+      if (Date.now() - BSCROLL.lastFetch < FETCH_MIN_INTERVAL) return;
+      loadNextBoardPage();
+    });
+    maybeAutoLoadBoard(box);
+  }
+
+  // 列表不足一屏（无法产生滚动）时自动续载，直到可滚动或翻完
+  function maybeAutoLoadBoard(box) {
+    if (BSCROLL.next <= BSCROLL.max && !BSCROLL.loading &&
+      box.scrollHeight <= box.clientHeight + 20) {
+      setTimeout(loadNextBoardPage, FETCH_MIN_INTERVAL);
+    }
+  }
+
+  function loadNextBoardPage() {
+    if (BSCROLL.loading || BSCROLL.next > BSCROLL.max) return;
+    BSCROLL.loading = true;
+    BSCROLL.lastFetch = Date.now();
+    var tip = document.getElementById('ngaw-board-sentinel');
+    if (tip) tip.textContent = '正在加载…';
+    fetchAndParse(buildPageUrl(location.pathname + location.search, BSCROLL.next)).then(function (doc) {
+      var threads = extractThreadRows(doc, location.origin + '/');
+      var fresh = threads.filter(function (t) { // 置顶帖每页重复出现，按 tid 去重
+        if (BSCROLL.seen[t.tid]) return false;
+        BSCROLL.seen[t.tid] = 1;
+        return true;
+      });
+      BSCROLL.next++;
+      var box = document.getElementById('ngaw-sessions');
+      if (box && box.dataset.mode !== 'boards') {
+        var tip2 = document.getElementById('ngaw-board-sentinel');
+        fresh.forEach(function (t) {
+          if (tip2) box.insertBefore(sessionEl(t, 0), tip2);
+          else box.appendChild(sessionEl(t, 0));
+        });
+        maybeAutoLoadBoard(box);
+      }
+      if (tip) tip.textContent = BSCROLL.next > BSCROLL.max ? '没有更多主题了' : '下滑加载更多主题…';
+      BSCROLL.loading = false;
+    }).catch(function () {
+      BSCROLL.loading = false;
+      if (tip) tip.textContent = '加载失败，稍后重试…';
+    });
+  }
 
   function initBoardPage() {
     var board = extractBoardInfo(document) || { fid: parseQueryParam(location.search, 'fid'), name: '版块' };
@@ -1332,6 +1482,7 @@
       var threads = extractThreadRows(document, location.href);
       renderSessionList(threads, 0, board.name, true);
       DEBUG_STATS.phase = threads.length ? 'rendered:board' : 'empty:board';
+      if (threads.length) setupBoardScroll(board, threads);
     });
     renderChatHeader(board.name, '');
     renderEmptyMain(ICONS.chat, '选择左侧会话开始浏览', '点击主题查看楼层消息');
@@ -1573,6 +1724,7 @@
     hashColor: hashColor,
     diceBearIdenticon: diceBearIdenticon,
     ngaBoardIconUrl: ngaBoardIconUrl,
+    ngaEmotionUrl: ngaEmotionUrl,
     firstChar: firstChar,
     escapeHtml: escapeHtml,
     truncate: truncate,

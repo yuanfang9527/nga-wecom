@@ -10,6 +10,21 @@ test('ngaBoardIconUrl: NGA 真实版块图标地址（fid 可为负）', () => {
   assert.strictEqual(m.ngaBoardIconUrl(-152678), 'https://img4.nga.cn/proxy/cache_attach/ficon/-152678u.png');
 });
 
+// ---------- ngaEmotionUrl ----------
+
+test('ngaEmotionUrl: 五系列表情字典映射（字典源 EVAyo/ngapost2md）', () => {
+  assert.strictEqual(m.ngaEmotionUrl('a2', '偷笑'), 'https://img4.nga.cn/ngabbs/post/smile/a2_03.png');
+  assert.strictEqual(m.ngaEmotionUrl('a2', 'doge'), 'https://img4.nga.cn/ngabbs/post/smile/a2_27.png');
+  assert.strictEqual(m.ngaEmotionUrl('ac', '哭'), 'https://img4.nga.cn/ngabbs/post/smile/ac13.png');
+  assert.strictEqual(m.ngaEmotionUrl('pst', '星星眼'), 'https://img4.nga.cn/ngabbs/post/smile/pt57.png');
+  assert.strictEqual(m.ngaEmotionUrl('dt', 'ROLL'), 'https://img4.nga.cn/ngabbs/post/smile/dt01.png');
+  assert.strictEqual(m.ngaEmotionUrl('pg', '满分'), 'https://img4.nga.cn/ngabbs/post/smile/pg03.png');
+  // 未知类型/名称返回空串（调用方回落占位符）
+  assert.strictEqual(m.ngaEmotionUrl('xx', '哭'), '');
+  assert.strictEqual(m.ngaEmotionUrl('a2', '不存在的表情'), '');
+  assert.strictEqual(m.ngaEmotionUrl(null, null), '');
+});
+
 // ---------- relTime / dayLabel ----------
 
 function tsOf(y, mo, d, h, mi) {
@@ -224,12 +239,19 @@ test('renderBbcode: 嵌套 quote 逐层展开', () => {
 });
 
 test('renderBbcode: 图片/链接/表情/代码块', () => {
-  const out = m.renderBbcode('[img]./mon_202407/abc.png[/img][url=https://a.com]文字[/url][s:ac:哭]哈哈[code]int x = 1;[/code]');
+  const out = m.renderBbcode('[img]./mon_202407/abc.png[/img][url=https://a.com]文字[/url][s:a2:偷笑]哈哈[code]int x = 1;[/code]');
   assert.ok(out.includes('<img src="./mon_202407/abc.png"'));
   assert.ok(out.includes('href="https://a.com"'));
-  assert.ok(out.includes('ngaw-emo'));
+  assert.ok(out.includes('ngaw-emo-img'));
+  assert.ok(out.includes('https://img4.nga.cn/ngabbs/post/smile/a2_03.png'));
   assert.ok(out.includes('ngaw-code'));
   assert.ok(out.includes('int x = 1;'));
+});
+
+test('renderBbcode: 未知表情回落占位符', () => {
+  const out = m.renderBbcode('[s:xx:不认识]图文[s:a2:doge]');
+  assert.ok(out.includes('class="ngaw-emo"'), '未知表情用占位 span');
+  assert.ok(out.includes('a2_27.png'), '已知表情正常出图');
 });
 
 test('renderBbcode: HTML 注入被转义', () => {
