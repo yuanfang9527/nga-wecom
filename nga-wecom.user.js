@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.2.1
+// @version      0.2.2
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.2.1';
+  var VERSION = '0.2.2';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -428,26 +428,15 @@
     var kill = frag.querySelectorAll('script,iframe,form,object,embed,link,meta,video,audio');
     Array.prototype.forEach.call(kill, function (el) { el.remove(); });
 
-    var all = frag.querySelectorAll('*');
-    Array.prototype.forEach.call(all, function (el) {
-      var attrs = Array.prototype.slice.call(el.attributes);
-      attrs.forEach(function (attr) {
-        var n = attr.name.toLowerCase();
-        if (n.indexOf('on') === 0) el.removeAttribute(attr.name);
-        else if (n === 'style' && /expression|javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
-        else if (n === 'class') el.removeAttribute('class'); // NGA 类名会命中其全局样式（block_txt/silver 等），气泡内全部剥离；我们自己的 ngaw-* 类在此之后添加
-      });
-    });
-
-    // 引用块归一：NGA 自渲染引用的类名未实测确认（可能为 quoteAvl 等变体，v0.1.18 的
-    // 精确 .quote 匹配漏掉了它们，原生样式残留）——放宽为"任何 class 含 quote 的元素"，
-    // 统一改写为 div.ngaw-quote 脱离 NGA 样式作用域，与 renderBbcode 产物走同一条 CSS。
-    // 外层先改写、内层随后续扫描继续处理以保留嵌套；ngaw-quote 自身排除防死循环。
-    function quoteClassCandidates() {
+    // ---- 引用块归一（必须在类名剥离之前跑，v0.2.1 顺序颠倒导致归一化找不到目标）----
+    // 实测结构（v0.2.2 probe quoteHtml）：NGA 引用为 div.quote，头部含
+    // '+' 跳原帖链接（title=打开链接，href 带 #pid..Anchor）、'R' 快速浏览
+    // 死链（javascript:）、userlink 作者链接、silver 时间戳、双 <br> 后接正文。
+    function quoteCandidates() {
       var out = [];
-      var bqs = [];
-      try { bqs = Array.prototype.slice.call(frag.querySelectorAll('[class], blockquote')); } catch (e) { bqs = []; }
-      bqs.forEach(function (el) {
+      var els;
+      try { els = Array.prototype.slice.call(frag.querySelectorAll('[class], blockquote')); } catch (e) { els = []; }
+      els.forEach(function (el) {
         if (el.tagName === 'BLOCKQUOTE') { out.push(el); return; }
         var toks = String(el.getAttribute('class') || '').split(/\s+/);
         for (var i = 0; i < toks.length; i++) {
@@ -457,16 +446,44 @@
       return out;
     }
     var guardQ = 0;
-    var qcs = quoteClassCandidates();
+    var qcs = quoteCandidates();
     while (qcs.length && guardQ++ < 60) {
       var qn = qcs[0];
-      if (!qn.parentNode) { qcs = quoteClassCandidates(); continue; }
+      if (!qn.parentNode) { qcs = quoteCandidates(); continue; }
       var qdiv = document.createElement('div');
       qdiv.className = 'ngaw-quote';
       while (qn.firstChild) qdiv.appendChild(qn.firstChild);
+      // 头部精修：删 R 死链；'+' 跳原帖链接做小徽章；作者链接加粗
+      Array.prototype.forEach.call(qdiv.querySelectorAll('a'), function (a) {
+        var href = a.getAttribute('href') || '';
+        var title = a.getAttribute('title') || '';
+        if (/^javascript:/i.test(href)) { a.remove(); return; }
+        if (title === '打开链接' || /#pid.+Anchor/.test(href)) a.classList.add('ngaw-quote-src');
+        else if (href.indexOf('nuke.php?func=ucp') >= 0) a.classList.add('ngaw-quote-user');
+      });
       qn.parentNode.replaceChild(qdiv, qn);
-      qcs = quoteClassCandidates();
+      qcs = quoteCandidates();
     }
+
+    // ---- 属性清洗：剥离 NGA 类名（防其全局样式渗入气泡），保留 ngaw-* 前缀类；
+    // 内联样式保留（名字色块等颜色随之保留），javascript: 死链兜底置 '#' ----
+    var all = frag.querySelectorAll('*');
+    Array.prototype.forEach.call(all, function (el) {
+      var attrs = Array.prototype.slice.call(el.attributes);
+      attrs.forEach(function (attr) {
+        var n = attr.name.toLowerCase();
+        if (n.indexOf('on') === 0) el.removeAttribute(attr.name);
+        else if (n === 'style' && /expression|javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
+      });
+      if (el.hasAttribute && el.hasAttribute('class')) {
+        var keep = String(el.getAttribute('class') || '').split(/\s+/).filter(function (t) { return /^ngaw-/.test(t); });
+        if (keep.length) el.setAttribute('class', keep.join(' '));
+        else el.removeAttribute('class');
+      }
+      if (el.tagName === 'A' && /^javascript:/i.test(el.getAttribute('href') || '')) {
+        el.setAttribute('href', '#');
+      }
+    });
 
     var imgs = frag.querySelectorAll('img');
     Array.prototype.forEach.call(imgs, function (img) {
@@ -945,6 +962,8 @@
     '.ngaw-bubble a:hover{text-decoration:underline}',
     '.ngaw-bubble .ngaw-quote,.ngaw-bubble blockquote{border-left:3px solid #cfcfcf;background:var(--quote-bg);color:var(--quote-fg);padding:6px 10px;margin:6px 0;border-radius:4px;font-size:13px;display:block}',
     '.ngaw-bubble .ngaw-quote .ngaw-quote,.ngaw-bubble blockquote blockquote{margin:4px 0}',
+    '.ngaw-bubble .ngaw-quote .ngaw-quote-src{font-size:11px;color:var(--sub);border:1px solid var(--border);border-radius:4px;padding:0 4px;margin-right:4px;text-decoration:none}',
+    '.ngaw-bubble .ngaw-quote .ngaw-quote-user{font-weight:600}',
     '.ngaw-bubble .ngaw-code{background:var(--quote-bg);border-radius:6px;padding:8px 10px;font-family:Consolas,Menlo,monospace;font-size:12px;white-space:pre-wrap;margin:6px 0;overflow-x:auto}',
     '.ngaw-bubble .ngaw-emo{display:inline-block;padding:0 2px;font-size:15px;opacity:.85;cursor:default}',
     '.ngaw-bubble li{margin-left:18px}',
