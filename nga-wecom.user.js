@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.6
+// @version      0.1.7
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.6';
+  var VERSION = '0.1.7';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -562,15 +562,19 @@
     return { fid: fid, name: (link.textContent || '').trim() || '版块' };
   }
 
-  // 首页版块链接集合（去重）
+  // 首页版块链接集合（去重）。v0.1.7 实测 boards=0：首页版块可能由脚本延迟渲染
+  // 或链接形态不同，候选放宽为任意带 fid 参数的论坛路径链接。
   function extractBoardLinks(root) {
     var links = [];
-    try { links = Array.prototype.slice.call(root.querySelectorAll('a[href*="thread.php?fid="]')); } catch (e) { links = []; }
+    try { links = Array.prototype.slice.call(root.querySelectorAll('a[href*="thread.php?fid="], a[href*="fid="]')); } catch (e) { links = []; }
     var seen = {};
     var boards = [];
     links.forEach(function (a) {
+      var href = a.getAttribute('href') || '';
+      // 只收论坛路径，排除 nuke.php 等带 fid 的杂项链接
+      if (!/thread\.php|forumdisplay|board/i.test(href.split('?')[0])) return;
       var name = (a.textContent || '').trim();
-      var fid = parseQueryParam(a.getAttribute('href') || '', 'fid');
+      var fid = parseQueryParam(href, 'fid');
       if (!name || !fid || seen[fid] || name.length > 16) return;
       seen[fid] = 1;
       boards.push({ fid: fid, name: truncate(name, 14) });
@@ -1144,13 +1148,20 @@
   var BOARD_CACHE = null;
 
   function initHomePage() {
-    var boards = extractBoardLinks(document);
-    BOARD_CACHE = boards;
-    renderSessionList(boards.map(function (b) { return { fid: b.fid, title: b.name, author: '', ts: 0, name: b.name }; }), 0, '版块');
     renderChatHeader('消息', '只读模式');
     renderEmptyMain(ICONS.doc, 'NGA 企微皮肤已启用', '从左侧选择版块开始浏览 · Alt+W 切回原版');
-    DEBUG_STATS.phase = boards.length ? 'rendered:home' : 'empty:home';
+    renderSessionList([], 0, '版块');
     showRoot();
+    // 首页版块可能由 NGA 脚本晚于 DOMContentLoaded 渲染（实测 boot 时 boards=0），
+    // 等版块链接出现后再提取；超时也再试一次兜底
+    waitFor('a[href*="thread.php?fid="], a[href*="fid="]', WAIT_TIMEOUT).then(function () {
+      var boards = extractBoardLinks(document);
+      BOARD_CACHE = boards;
+      DEBUG_STATS.phase = boards.length ? 'rendered:home' : 'empty:home';
+      if (boards.length) {
+        renderSessionList(boards.map(function (b) { return { fid: b.fid, title: b.name, author: '', ts: 0, name: b.name }; }), 0, '版块');
+      }
+    });
   }
 
   // 左栏“版块”按钮：会话区切换为版块快捷列表，再次点击还原
@@ -1428,7 +1439,7 @@
       return s;
     }
 
-    var PROBE_TARGETS = ['#m_posts', '#m_posts_c', '#m_threads', '#m_nav', '#mainmenu', '#m_top', '#m_ct', 'body'];
+    var PROBE_TARGETS = ['#m_posts', '#m_posts_c', '#m_threads', '#m_nav', '#mainmenu', '#m_top', '#m_ct', '#category_0', '#m_categories', 'body'];
 
     window.NGAWECOM = {
       version: VERSION,
@@ -1490,6 +1501,28 @@
           firstThreadLink: firstThreadLink ? ancestryOf(firstThreadLink, 8) : null,
           firstPostContent: firstPost ? ancestryOf(firstPost, 8) : null
         };
+        // 链接模式统计：按 pathname 分组取前 15，定位版块等真实链接形态（首页 boards=0 排查用）
+        var patCounts = {};
+        try {
+          Array.prototype.forEach.call(document.querySelectorAll('a[href]'), function (a) {
+            try {
+              var u = new URL(a.getAttribute('href') || '', location.origin);
+              var k = u.pathname || '/';
+              patCounts[k] = (patCounts[k] || 0) + 1;
+            } catch (e) { }
+          });
+        } catch (e) { }
+        out.linkPatterns = {};
+        Object.keys(patCounts).sort(function (x, y) { return patCounts[y] - patCounts[x]; }).slice(0, 15)
+          .forEach(function (k) { out.linkPatterns[k] = patCounts[k]; });
+        var fidSamples = [];
+        try {
+          Array.prototype.some.call(document.querySelectorAll('a[href*="fid="]'), function (a) {
+            fidSamples.push(a.getAttribute('href'));
+            return fidSamples.length >= 3;
+          });
+        } catch (e) { }
+        out.fidLinkSamples = fidSamples;
         if (window.console) {
           console.log('[nga-wecom] probe：selectors=候选选择器命中数，structure=容器前 8 个子元素签名');
           console.log(JSON.stringify(out, null, 2));
