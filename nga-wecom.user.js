@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA 企微皮肤 (nga-wecom)
 // @namespace    https://github.com/Wangyi/nga-wecom
-// @version      0.1.13
+// @version      0.1.14
 // @description  把 NGA 玩家社区伪装成企业微信桌面客户端 —— 登录态只读浏览模式，Alt+W 一键切回原版
 // @author       Wangyi
 // @match        *://bbs.nga.cn/*
@@ -35,7 +35,7 @@
   // 1. 常量与调试统计
   // ====================================================================
 
-  var VERSION = '0.1.13';
+  var VERSION = '0.1.14';
   var LS_KEY = 'ngawecom:settings';
   var WECOM_TITLE = '企业微信';
   var FETCH_MIN_INTERVAL = 800; // 无限滚动两次请求的最小间隔（ms），降低风控风险
@@ -112,6 +112,12 @@
     var gender = h % 2 ? 'women' : 'men';
     var idx = Math.floor(h / 2) % 100;
     return 'https://randomuser.me/api/portraits/' + gender + '/' + idx + '.jpg';
+  }
+
+  // NGA 真实版块图标（用户实测样本：img4.nga.cn/proxy/cache_attach/ficon/{fid}u.png，
+  // fid 可为负，如 -152678=英雄联盟；?391 为缓存戳可省）
+  function ngaBoardIconUrl(fid) {
+    return 'https://img4.nga.cn/proxy/cache_attach/ficon/' + encodeURIComponent(String(fid)) + 'u.png';
   }
 
   function firstChar(name) {
@@ -992,12 +998,12 @@
     return d;
   }
 
-  // 会话列表专用：网络人像头像，失败回落首字符
-  function sessionAvatarEl(name) {
+  // 会话列表专用：版块用 NGA 真实图标（overrideUrl），帖子用网络人像；失败均回落首字符
+  function sessionAvatarEl(name, overrideUrl) {
     var d = h('div', 'ngaw-avatar');
     var img = document.createElement('img');
     img.alt = '';
-    img.src = networkAvatarUrl(name);
+    img.src = overrideUrl || networkAvatarUrl(name);
     img.onerror = function () {
       d.innerHTML = '';
       d.textContent = firstChar(name);
@@ -1060,7 +1066,9 @@
     var s = document.createElement(href ? 'a' : 'div');
     s.className = 'ngaw-session' + (currentTid && item.tid === currentTid ? ' current' : '');
     if (href) s.setAttribute('href', href);
-    s.appendChild(sessionAvatarEl(item.author || item.name || item.title || '版'));
+    // 版块条目（fid）用 NGA 真实版块图标，帖子条目用网络人像
+    var avOverride = item.fid ? ngaBoardIconUrl(item.fid) : null;
+    s.appendChild(sessionAvatarEl(item.author || item.name || item.title || '版', avOverride));
     var mid = h('div', 'mid');
     var row1 = h('div', 'row1');
     row1.appendChild(h('div', 't', escapeHtml(item.title || item.name)));
@@ -1517,6 +1525,7 @@
     dayLabel: dayLabel,
     hashColor: hashColor,
     networkAvatarUrl: networkAvatarUrl,
+    ngaBoardIconUrl: ngaBoardIconUrl,
     firstChar: firstChar,
     escapeHtml: escapeHtml,
     truncate: truncate,

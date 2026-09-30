@@ -4,6 +4,12 @@ const test = require('node:test');
 const assert = require('node:assert');
 const m = require('../nga-wecom.user.js');
 
+test('ngaBoardIconUrl: NGA 真实版块图标地址（fid 可为负）', () => {
+  assert.strictEqual(m.ngaBoardIconUrl('-152678'), 'https://img4.nga.cn/proxy/cache_attach/ficon/-152678u.png');
+  assert.strictEqual(m.ngaBoardIconUrl(200), 'https://img4.nga.cn/proxy/cache_attach/ficon/200u.png');
+  assert.strictEqual(m.ngaBoardIconUrl(-152678), 'https://img4.nga.cn/proxy/cache_attach/ficon/-152678u.png');
+});
+
 // ---------- relTime / dayLabel ----------
 
 function tsOf(y, mo, d, h, mi) {
